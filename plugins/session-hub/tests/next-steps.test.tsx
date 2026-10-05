@@ -378,9 +378,9 @@ describe('desktop renderer', () => {
     expect(await labels(ui)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
     expect((await ui.find({ type: 'Box', key: 'next-step-hit-2' }))?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch' })
     expect((await rowTexts(ui)).filter((_, i) => i % 2 === 1).map(t => [t.text, t.props.wrap])).toEqual([
-      ['Why: Run the tests', 'truncate'],
-      ['Why: Review it', 'truncate'],
-      ['Why: Settings page', 'truncate'],
+      ['Why: Run the tests', 'wrap'],
+      ['Why: Review it', 'wrap'],
+      ['Why: Settings page', 'wrap'],
     ])
 
     await ui.press({ key: 'next-step-2' })
@@ -545,14 +545,39 @@ describe('shared behaviour', () => {
 })
 
 describe('suggestion shape', () => {
-  test('asks for an analysis first and the list inside <suggestions>, in three slots', async ($, on) => {
+  test('asks for an analysis first and one to three suggestions inside <suggestions>, at most one of each kind', async ($, on) => {
     const w = world(on)
     await completeTurn($, w)
 
     expect(w.forkPrompts[0]).toContain('<analysis>')
-    expect(w.forkPrompts[0]).toContain('crux: the one open question')
+    expect(w.forkPrompts[0]).toContain('question: the one open question')
     expect(w.forkPrompts[0]).toContain('- decide: in place of verify')
+    expect(w.forkPrompts[0]).toContain('Write one to three suggestions, at most one of each kind')
     expect(w.forkPrompts[0]).toContain('<suggestions>[{"kind": "verify|decide|dig|advance"')
+    expect(w.forkPrompts[0]).not.toContain('crux:')
+    expect(w.forkPrompts[0]).not.toContain('6 in all')
+  })
+
+  test('asks for label and why in plain Vietnamese with no internal terms and no arrow shorthand', async ($, on) => {
+    const w = world(on)
+    await completeTurn($, w)
+
+    expect(w.forkPrompts[0]).toContain('Write label and why in Vietnamese that the user understands at a glance')
+    expect(w.forkPrompts[0]).toContain('Never put internal terms in label or why: crux, slot, verify, dig, advance, decide, analysis.')
+    expect(w.forkPrompts[0]).toContain('one plain sentence saying what the user learns or gains from it')
+    expect(w.forkPrompts[0]).not.toContain('yes →')
+    expect(w.forkPrompts[0]).not.toContain('no →')
+  })
+
+  test('a long why wraps onto more lines and is shown whole', async ($, on) => {
+    const why = 'Cho biết bản cài trên máy có đúng là bản vừa sửa hay không, để khỏi đánh giá nhầm trên bản cũ'
+    const w = world(on, forkReply([entry('Kiểm tra bản đang cài', 'p', 'verify', why)]))
+    await completeTurn($, w)
+    const ui = await pane($)
+
+    const drawn = (await rowTexts(ui))[1]
+    expect(drawn?.text).toBe(why)
+    expect(drawn?.props.wrap).toBe('wrap')
   })
 
   test('reads the list inside <suggestions> although the analysis holds brackets, and shows the goal above the cards', async ($, on) => {
@@ -606,7 +631,7 @@ describe('suggestion shape', () => {
 })
 
 describe('anchoring', () => {
-  test('the open plan steps reach the fork, which must move one of them', async ($, on) => {
+  test('the open plan steps reach the fork as a preference, never a must', async ($, on) => {
     const w = world(on)
     await $.tool.call({
       tool: TOOL,
@@ -617,7 +642,8 @@ describe('anchoring', () => {
     await completeTurn($, w)
 
     expect(w.forkPrompts[0]).toContain('<open-plan-steps>\n- Fix login: Patch (active); Verify\n</open-plan-steps>')
-    expect(w.forkPrompts[0]).toContain('At least one suggestion must move one of these steps')
+    expect(w.forkPrompts[0]).toContain('When one of these steps is still the work at hand, prefer a suggestion that moves it forward')
+    expect(w.forkPrompts[0]).not.toContain('must move')
   })
 
   test('without open plans or earlier offers the fork gets no anchors', async ($, on) => {
@@ -680,22 +706,26 @@ describe('anchoring', () => {
 
 const RANKING = JSON.stringify([
   { index: 2, score: 5 },
-  { index: 0, score: 4, label: 'Tests pass?' },
+  { index: 0, score: 4, label: 'Tests pass?', why: 'Shorter why' },
   { index: 1, score: 2 },
 ])
 
 describe('critic', () => {
-  test('by default opus grades six candidates and the best of each slot is shown, best first', async ($, on) => {
+  test('by default opus scores the candidates and the best of each kind is shown, best first, word for word', async ($, on) => {
     const w = world(on, SUGGESTIONS, undefined, RANKING)
     await completeTurn($, w)
 
-    expect(w.forkPrompts[0]).toContain('up to 2 different candidates per slot, 6 in all')
     expect(w.criticCalls).toHaveLength(1)
     expect(w.criticCalls[0]).toMatchObject({ model: 'opus', effort: 'high', maxTokens: 800, timeoutMs: 20000 })
     expect(w.criticCalls[0]?.system).toContain('You grade suggested next prompts')
+    expect(w.criticCalls[0]?.system).toContain('Only score: never rewrite a candidate.')
+    expect(w.criticCalls[0]?.system).toContain('[{"index": <n>, "score": <1-5>}]')
+    expect(w.criticCalls[0]?.system).not.toContain('tighter')
     expect(w.criticCalls[0]?.prompt).toContain('<analysis>\ngoal: Ship the settings fix [v2]')
     expect(w.criticCalls[0]?.prompt).toContain('[0] kind: verify | label: Run the tests | why: Why: Run the tests | prompt: run the tests you just wrote')
-    expect(await paneLabels($)).toEqual(['→ Settings page', '✓ Tests pass?'])
+    expect(await paneLabels($)).toEqual(['→ Settings page', '✓ Run the tests'])
+    const ui = await pane($)
+    expect(await whys(ui)).toEqual(['Why: Settings page', 'Why: Run the tests'])
     expect(w.logged).toContain('critic opus kept 2 of 4')
   })
 
@@ -706,12 +736,12 @@ describe('critic', () => {
     expect(w.criticCalls[0]?.model).toBe('haiku')
   })
 
-  test('off makes no extra call and asks the fork for one per slot', { options: { critic: 'off' } }, async ($, on) => {
+  test('off makes no extra call, and the fork is asked the same either way', { options: { critic: 'off' } }, async ($, on) => {
     const w = world(on, SUGGESTIONS, undefined, RANKING)
     await completeTurn($, w)
 
     expect(w.criticCalls).toEqual([])
-    expect(w.forkPrompts[0]).toContain('at most one suggestion per slot, three in all')
+    expect(w.forkPrompts[0]).toContain('Write one to three suggestions, at most one of each kind')
     expect(await paneLabels($)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
   })
 

@@ -1,6 +1,6 @@
 {
   "name": "session-hub",
-  "version": "0.1.0-local.13",
+  "version": "0.1.0-local.14",
   "description": "One Mod status pane for Claude Code Desktop with an icon rail: Progress (live plan bars with step times and history, forked from zycck/claude-mods plan-progress), Next steps (up to three suggested next prompts; a click puts one in the composer) and Cache (how long the prompt cache stays warm). One footer entry opens the pane; the terminal keeps the progress band and the next-steps band",
   "author": {
     "name": "bqnhat"
@@ -33,7 +33,7 @@
     "critic": {
       "type": "string",
       "title": "Model that grades the suggestions",
-      "description": "Ask for six candidates and let this model keep the best three, one per kind; off shows the fork's own three.",
+      "description": "Let this model score the suggestions and drop the weak ones, without rewriting them; off shows the fork's own.",
       "required": false,
       "options": ["off", "haiku", "opus"],
       "default": "opus"
