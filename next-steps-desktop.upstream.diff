@@ -1,0 +1,537 @@
+diff --git a/a/next-steps/.claude-plugin/plugin.json b/b/next-steps/.claude-plugin/plugin.json
+index 9a60bf7..4bc0b79 100644
+--- a/a/next-steps/.claude-plugin/plugin.json
++++ b/b/next-steps/.claude-plugin/plugin.json
+@@ -1,12 +1,12 @@
+ {
+-  "name": "next-steps",
+-  "version": "1.0.0",
+-  "description": "After each turn, suggests up to three next prompts above the input. Press 1, 2 or 3 to put one in the prompt box as a draft you can edit, 0 to dismiss.",
++  "name": "next-steps-desktop",
++  "version": "1.0.0-desktop.1",
++  "description": "After each turn, suggests up to three next prompts above the input, in the terminal and in Claude Code Desktop. Press 1, 2 or 3 (or click one) to put it in the prompt box as a draft you can edit, 0 to dismiss.",
+   "author": {
+     "name": "Thariq Shihipar"
+   },
+   "license": "MIT",
+-  "keywords": ["suggestions", "next-steps", "prompt", "function-hooks", "ui"],
++  "keywords": ["suggestions", "next-steps", "prompt", "function-hooks", "ui", "desktop"],
+   "userConfig": {
+     "minAnswerChars": {
+       "type": "number",
+diff --git a/a/next-steps/README.md b/b/next-steps/README.md
+index bec8039..fdc25b8 100644
+--- a/a/next-steps/README.md
++++ b/b/next-steps/README.md
+@@ -1,6 +1,8 @@
+-# next-steps
++# next-steps-desktop
+ 
+-After each turn, suggests up to three next prompts above the input box.
++After each turn, suggests up to three next prompts above the input box, in the terminal and in Claude Code Desktop.
++
++A local fork of [`next-steps`](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps) (upstream commit `87c843d52c12f4bc91bb23b47132eb08b70e6cb6`, version 1.0.0, MIT, by Thariq Shihipar). The suggestion logic is unchanged; only a Desktop renderer is added. It is renamed so it cannot clash with the upstream plugin.
+ 
+ ```
+ next:
+@@ -20,11 +22,23 @@ It is a function-hooks plugin (`hooks/register.tsx`):
+ 
+ - `turn.complete`: forks the session with `$.model.fork` to ask for likely next prompts. The fork shares the session's prompt cache, so it costs about one short reply.
+ - `$.command.list`: the session's skills and slash commands (plugin, user and MCP ones with their descriptions) go into the fork's question, so a suggestion can be `/skill arguments`. A suggestion that names a command the session does not have is dropped.
+-- `ui.render` on `AbovePrompt`: draws the suggestions as buttons.
++- `ui.render` on `AbovePrompt`: draws the suggestions as buttons, by `e.surface`.
+ - A press calls `$.prompt.fill`; the top suggestion goes to `$.prompt.suggest`.
+ - `turn.start`: hides the suggestions.
+ 
+-Suggestions draw in the terminal. Other surfaces show nothing.
++## Surfaces
++
++| Surface | What draws |
++| --- | --- |
++| `terminal` | The upstream tree, unchanged: `next:` and plain `1:` / `2:` / `3:` / `0: dismiss` buttons |
++| `desktop` | A row of native buttons (`next-step-1` to `next-step-3`, hotkeys `1` to `3`) and a `Dismiss` button drawn as the band's close control (`role="dismiss"`) |
++| `mobile`, `vscode` | Nothing: the engine raises `AbovePrompt` on the terminal and desktop surfaces only |
++
++On Desktop a press goes through `$.prompt.fill`, which the engine routes to the Desktop composer (`ui_prompt_fill`), so the prompt lands in the composer as a draft and is not sent.
++
++## Requirements
++
++Function hooks are early access. An installed plugin's hooks module loads only while the engine's `tengu_plugin_hooks_modules` rollout is on for the session, or, on Claude Code builds that still read it (2.1.284), while `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is in the session's environment. Without either, the plugin installs but draws nothing.
+ 
+ ## Options
+ 
+@@ -32,3 +46,11 @@ Suggestions draw in the terminal. Other surfaces show nothing.
+ | --- | --- | --- |
+ | `minAnswerChars` | `80` | Skip suggestions after answers shorter than this |
+ | `suggestSkills` | `true` | Tell the suggester which skills and slash commands the session has |
++
++## Tests
++
++```
++CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .
++```
++
++`tests/next-steps.test.tsx` mounts `AbovePrompt` on the `terminal` and `desktop` surfaces and checks the buttons, the draft fill, dismiss, the hide on a new turn, both options, fork failure and text cleaning.
+diff --git a/a/next-steps/hooks/register.tsx b/b/next-steps/hooks/register.tsx
+index d9a6435..619a8b6 100644
+--- a/a/next-steps/hooks/register.tsx
++++ b/b/next-steps/hooks/register.tsx
+@@ -11,7 +11,13 @@
+ // The fork is also handed the session's skills and slash commands
+ // ($.command.list), so a suggestion can be "/skill arguments".
+ 
+-import type { CommandInfo, EngineInterface, Register, RenderElement } from 'claude-code'
++import type {
++  CommandInfo,
++  EngineInterface,
++  Register,
++  RenderElement,
++  RenderInputOf,
++} from 'claude-code'
+ 
+ type Suggestion = { label: string; prompt: string }
+ 
+@@ -147,6 +153,100 @@ function show($: EngineInterface, nextView: View): void {
+   $.ui.invalidate('ui.render')
+ }
+ 
++type ShownView = Exclude<View, { kind: 'hidden' }>
++
++function fillDraft($: EngineInterface, prompt: string): void {
++  show($, { kind: 'hidden' })
++  void $.prompt.fill({ text: prompt }).then(
++    r => r.isFilled || $.ui.toast('could not fill the prompt box'),
++    error => $.ui.toast(`could not fill: ${String(error)}`),
++  )
++}
++
++function terminalBand(
++  $: EngineInterface,
++  e: RenderInputOf<'AbovePrompt', 'terminal'>,
++  below: RenderElement,
++  shown: ShownView,
++): RenderElement {
++  const { Box, Text, Button } = $.ui.resolve(e)
++
++  if (shown.kind === 'loading') {
++    return (
++      <Box flexDirection="column">
++        {below}
++        <Box marginTop={1}>
++          <Text dimColor>next steps…</Text>
++        </Box>
++      </Box>
++    )
++  }
++
++  const items = shown.items
++  return (
++    <Box flexDirection="column">
++      {below}
++      <Box marginTop={1} />
++      <Text dimColor>next:</Text>
++      {items.map((item, index) => (
++        <Box key={`s${index}`} marginLeft={2}>
++          <Button
++            hotkey={String(index + 1)}
++            plain
++            label={item.label}
++            onPress={() => fillDraft($, item.prompt)}
++          />
++        </Box>
++      ))}
++      <Box marginLeft={2}>
++        <Button hotkey="0" plain label="dismiss" onPress={() => show($, { kind: 'hidden' })} />
++      </Box>
++    </Box>
++  )
++}
++
++function desktopBand(
++  $: EngineInterface,
++  e: RenderInputOf<'AbovePrompt', 'desktop'>,
++  below: RenderElement,
++  shown: ShownView,
++): RenderElement {
++  const { Box, Text, Button } = $.ui.resolve(e)
++
++  if (shown.kind === 'loading') {
++    return (
++      <Box flexDirection="column" gap={1}>
++        {below}
++        <Text dimColor>Next steps…</Text>
++      </Box>
++    )
++  }
++
++  return (
++    <Box flexDirection="column" gap={1}>
++      {below}
++      <Box key="next-steps" flexDirection="row" flexWrap="wrap" alignItems="center" gap={1}>
++        <Text dimColor>Next:</Text>
++        {shown.items.map((item, index) => (
++          <Button
++            key={`next-step-${index + 1}`}
++            hotkey={String(index + 1)}
++            label={item.label}
++            onPress={() => fillDraft($, item.prompt)}
++          />
++        ))}
++        <Button
++          key="next-steps-dismiss"
++          hotkey="0"
++          role="dismiss"
++          label="Dismiss"
++          onPress={() => show($, { kind: 'hidden' })}
++        />
++      </Box>
++    </Box>
++  )
++}
++
+ export const register: Register = (on, options) => {
+   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
+   const suggestsSkills = options?.suggestSkills !== false
+@@ -186,45 +286,8 @@ export const register: Register = (on, options) => {
+   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next): Promise<RenderElement> => {
+     const below = await next(e)
+     if (e.props.hasSurvey || e.props.isWorking || view.kind === 'hidden') return below
+-    const { Box, Text, Button } = $.ui.resolve(e)
+-
+-    if (view.kind === 'loading') {
+-      return (
+-        <Box flexDirection="column">
+-          {below}
+-          <Box marginTop={1}>
+-            <Text dimColor>next steps…</Text>
+-          </Box>
+-        </Box>
+-      )
+-    }
+-
+-    const items = view.items
+-    return (
+-      <Box flexDirection="column">
+-        {below}
+-        <Box marginTop={1} />
+-        <Text dimColor>next:</Text>
+-        {items.map((item, index) => (
+-          <Box key={`s${index}`} marginLeft={2}>
+-            <Button
+-              hotkey={String(index + 1)}
+-              plain
+-              label={item.label}
+-              onPress={() => {
+-                show($, { kind: 'hidden' })
+-                void $.prompt.fill({ text: item.prompt }).then(
+-                  r => r.isFilled || $.ui.toast('could not fill the prompt box'),
+-                  error => $.ui.toast(`could not fill: ${String(error)}`),
+-                )
+-              }}
+-            />
+-          </Box>
+-        ))}
+-        <Box marginLeft={2}>
+-          <Button hotkey="0" plain label="dismiss" onPress={() => show($, { kind: 'hidden' })} />
+-        </Box>
+-      </Box>
+-    )
++    if (e.surface === 'terminal') return terminalBand($, e, below, view)
++    if (e.surface === 'desktop') return desktopBand($, e, below, view)
++    return below
+   })
+ }
+diff --git a/b/next-steps/tests/next-steps.test.tsx b/b/next-steps/tests/next-steps.test.tsx
+new file mode 100644
+index 0000000..43aafed
+--- /dev/null
++++ b/b/next-steps/tests/next-steps.test.tsx
+@@ -0,0 +1,288 @@
++import { describe, expect, mock, test } from 'claude-code/testing'
++import type { On } from 'claude-code'
++import type { Engine, MockClock } from 'claude-code/testing'
++
++const PLUGIN = 'next-steps-desktop'
++
++const BAND_PROPS = {
++  hasSurvey: false,
++  isWorking: false,
++  maxRows: 12,
++  bodyColumns: 80,
++  scroll: { offset: 0, bodyRows: 12 },
++  view: {},
++}
++
++const USAGE = {
++  input_tokens: 0,
++  output_tokens: 0,
++  cache_read_input_tokens: 0,
++  cache_creation_input_tokens: 0,
++}
++
++const LONG_ANSWER = 'The change is in place and the tests pass. '.repeat(3)
++
++const SUGGESTIONS = JSON.stringify([
++  { label: 'Run the tests', prompt: 'run the tests you just wrote' },
++  { label: 'Review it', prompt: '/code-review high' },
++  { label: 'Unknown command', prompt: '/no-such-command now' },
++  { label: 'Settings page', prompt: 'do the same for the settings page' },
++  { label: 'Fourth one', prompt: 'this one is past the limit' },
++])
++
++type World = {
++  clock: MockClock
++  forkPrompts: string[]
++  filled: { text: string; mode: string }[]
++  suggested: string[]
++  submitted: string[]
++  logged: string[]
++}
++
++function world(on: On, reply: string | Error = SUGGESTIONS, gate?: Promise<void>): World {
++  const w: World = {
++    clock: mock.clock(on),
++    forkPrompts: [],
++    filled: [],
++    suggested: [],
++    submitted: [],
++    logged: [],
++  }
++  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
++  on('turn.complete', async (_$, e) => ({ text: e.answer }))
++  on('command.list', async () => ({
++    value: [
++      { name: 'code-review', description: 'Review the current diff', source: 'plugin' as const },
++      { name: 'clear', description: 'Clear the conversation', source: 'builtin' as const },
++    ],
++  }))
++  on('model.fork', async (_$, e) => {
++    w.forkPrompts.push(e.prompt)
++    await gate
++    if (reply instanceof Error) throw reply
++    return { value: { isAnswered: true as const, text: reply, usage: USAGE } }
++  })
++  on('prompt.fill', async (_$, e) => {
++    w.filled.push({ text: e.text, mode: e.mode })
++    return { isFilled: true }
++  })
++  on('prompt.suggest', async (_$, e) => {
++    w.suggested.push(e.text)
++    return { isShown: true }
++  })
++  on('prompt.submit', async (_$, e) => {
++    w.submitted.push(e.text)
++    return { text: e.text }
++  })
++  on('ui.log', async (_$, e) => {
++    w.logged.push(e.text)
++    return { value: undefined }
++  })
++  on('ui.toast', async () => ({ value: undefined }))
++  on('ui.render', async () => <></>)
++  return w
++}
++
++async function completeTurn($: Engine, w: World, answer = LONG_ANSWER, turnId = 'turn-1') {
++  await $.turn.complete({
++    reason: 'answer',
++    answer,
++    durationMs: 1,
++    isAborted: false,
++    turnId,
++  })
++  await w.clock.settle()
++}
++
++describe('terminal renderer', () => {
++  test('offers at most three known suggestions as 1/2/3 buttons and fills a draft', async ($, on) => {
++    const w = world(on)
++    await completeTurn($, w)
++    const ui = await $.ui.mount({
++      plugin: PLUGIN,
++      surface: 'terminal',
++      component: 'AbovePrompt',
++      props: BAND_PROPS,
++    })
++
++    const buttons = await ui.findAll({ type: 'Button' })
++    expect(buttons.map(b => b.props.label)).toEqual([
++      'Run the tests',
++      'Review it',
++      'Settings page',
++      'dismiss',
++    ])
++    expect(buttons.map(b => b.props.hotkey)).toEqual(['1', '2', '3', '0'])
++    expect(await ui.find({ type: 'Text', text: 'next:' })).toBeDefined()
++    expect(w.suggested).toEqual(['run the tests you just wrote'])
++
++    await ui.press({ key: 'Review it' })
++    expect(w.filled).toEqual([{ text: '/code-review high', mode: 'replace' }])
++    expect(w.submitted).toEqual([])
++    expect(await ui.find({ type: 'Button' })).toBeUndefined()
++  })
++})
++
++describe('desktop renderer', () => {
++  test('draws native buttons and a dismiss control', async ($, on) => {
++    const w = world(on)
++    await completeTurn($, w)
++    const ui = await $.ui.mount({
++      plugin: PLUGIN,
++      surface: 'desktop',
++      component: 'AbovePrompt',
++      props: BAND_PROPS,
++    })
++
++    const buttons = await ui.findAll({ type: 'Button' })
++    expect(buttons.map(b => b.key)).toEqual([
++      'next-step-1',
++      'next-step-2',
++      'next-step-3',
++      'next-steps-dismiss',
++    ])
++    expect(buttons.map(b => b.props.label)).toEqual([
++      'Run the tests',
++      'Review it',
++      'Settings page',
++      'Dismiss',
++    ])
++    expect(buttons.some(b => b.props.plain !== undefined)).toBe(false)
++    expect(buttons[3]?.props.role).toBe('dismiss')
++    expect(await ui.find({ type: 'Text', text: 'Next:' })).toBeDefined()
++  })
++
++  test('a press puts the prompt in the composer as a draft and never submits it', async ($, on) => {
++    const w = world(on)
++    await completeTurn($, w)
++    const ui = await $.ui.mount({
++      plugin: PLUGIN,
++      surface: 'desktop',
++      component: 'AbovePrompt',
++      props: BAND_PROPS,
++    })
++
++    await ui.press({ key: 'next-step-3' })
++    await w.clock.settle()
++
++    expect(w.filled).toEqual([{ text: 'do the same for the settings page', mode: 'replace' }])
++    expect(w.submitted).toEqual([])
++    expect(await ui.find({ type: 'Button' })).toBeUndefined()
++  })
++
++  test('dismiss hides the suggestions without filling', async ($, on) => {
++    const w = world(on)
++    await completeTurn($, w)
++    const ui = await $.ui.mount({
++      plugin: PLUGIN,
++      surface: 'desktop',
++      component: 'AbovePrompt',
++      props: BAND_PROPS,
++    })
++
++    await ui.press({ key: 'next-steps-dismiss' })
++
++    expect(await ui.find({ type: 'Button' })).toBeUndefined()
++    expect(w.filled).toEqual([])
++  })
++
++  test('shows a loading line while the fork is out', async ($, on) => {
++    let release: () => void = () => undefined
++    const held = new Promise<void>(resolve => {
++      release = resolve
++    })
++    const w = world(on, SUGGESTIONS, held)
++    await completeTurn($, w)
++    const ui = await $.ui.mount({
++      plugin: PLUGIN,
++      surface: 'desktop',
++      component: 'AbovePrompt',
++      props: BAND_PROPS,
++    })
++
++    expect(await ui.find({ type: 'Text', text: 'Next steps…' })).toBeDefined()
++    expect(await ui.find({ type: 'Button' })).toBeUndefined()
++
++    release()
++    await w.clock.settle()
++    await ui.redraw()
++    expect(await ui.findAll({ type: 'Button' })).toHaveLength(4)
++  })
++})
++
++describe('shared behaviour', () => {
++  for (const surface of ['terminal', 'desktop'] as const) {
++    test(`${surface}: a new turn hides the suggestions`, async ($, on) => {
++      const w = world(on)
++      await completeTurn($, w)
++      const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: BAND_PROPS })
++      expect(await ui.find({ type: 'Button' })).toBeDefined()
++
++      await $.turn.start({ text: 'next prompt', turnId: 'turn-2' })
++
++      expect(await ui.find({ type: 'Button' })).toBeUndefined()
++    })
++
++    test(`${surface}: nothing is drawn while the model works or a survey holds the band`, async ($, on) => {
++      const w = world(on)
++      await completeTurn($, w)
++      for (const props of [
++        { ...BAND_PROPS, isWorking: true },
++        { ...BAND_PROPS, hasSurvey: true },
++      ]) {
++        const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props })
++        expect(await ui.find({ type: 'Button' })).toBeUndefined()
++        await ui.unmount()
++      }
++    })
++  }
++
++  test('skips answers shorter than minAnswerChars', { options: { minAnswerChars: 500 } }, async ($, on) => {
++    const w = world(on)
++    await completeTurn($, w)
++
++    expect(w.forkPrompts).toEqual([])
++  })
++
++  test('lists plugin commands for the fork and leaves builtins out', async ($, on) => {
++    const w = world(on)
++    await completeTurn($, w)
++
++    expect(w.forkPrompts).toHaveLength(1)
++    expect(w.forkPrompts[0]).toContain('<available-skills>')
++    expect(w.forkPrompts[0]).toContain('/code-review: Review the current diff')
++    expect(w.forkPrompts[0]).not.toContain('/clear')
++  })
++
++  test('suggestSkills false keeps the command list out of the fork', { options: { suggestSkills: false } }, async ($, on) => {
++    const w = world(on)
++    await completeTurn($, w)
++
++    expect(w.forkPrompts).toHaveLength(1)
++    expect(w.forkPrompts[0]).not.toContain('<available-skills>')
++  })
++
++  test('a failed fork logs and shows nothing', async ($, on) => {
++    const w = world(on, new Error('boom'))
++    await completeTurn($, w)
++    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
++
++    expect(await ui.find({ type: 'Button' })).toBeUndefined()
++    expect(w.logged.some(line => line.includes('fork failed'))).toBe(true)
++  })
++
++  test('cleans escapes and controls, and refuses tag characters', async ($, on) => {
++    const reply = JSON.stringify([
++      { label: 'Clean\u001b[31m me​', prompt: 'run\u0007 the\n\ntests' },
++      { label: 'Hidden', prompt: 'hello\u{E0041}' },
++    ])
++    const w = world(on, reply)
++    await completeTurn($, w)
++    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
++
++    const buttons = await ui.findAll({ type: 'Button' })
++    expect(buttons.map(b => b.props.label)).toEqual(['Clean me', 'Dismiss'])
++    await ui.press({ key: 'next-step-1' })
++    expect(w.filled).toEqual([{ text: 'run the tests', mode: 'replace' }])
++  })
++})

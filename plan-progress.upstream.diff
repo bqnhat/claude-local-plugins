@@ -1,0 +1,866 @@
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/.claude-plugin/plugin.json plugins/plan-progress/.claude-plugin/plugin.json
+--- upstream/plan-progress/0.3.0/.claude-plugin/plugin.json	2026-10-02 12:19:37.074403200 +0900
++++ plugins/plan-progress/.claude-plugin/plugin.json	2026-10-02 17:30:15.410538700 +0900
+@@ -1,7 +1,7 @@
+ {
+   "name": "plan-progress",
+-  "version": "0.3.0",
+-  "description": "Live plan progress bars above the Claude Code prompt: stages, steps, a pixel fill and soft sounds for decision, error and done",
++  "version": "0.3.0-local.5",
++  "description": "Live plan progress bars above the Claude Code prompt: stages, steps, a pixel fill and soft sounds for decision, error and done. Local fork of zycck/claude-mods plan-progress 0.3.0 (ea2c96b) that sends its rules with the first prompt instead of prompt.compose and sends an unexplained open bar back from turn.complete instead of classic.Stop, and redraws the bars from the transcript after a rewind or resume",
+   "author": { "name": "Kirill Serditov", "url": "https://github.com/zycck" },
+   "license": "MIT",
+   "types": "./types/index.d.ts"
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/hooks/register.tsx plugins/plan-progress/hooks/register.tsx
+--- upstream/plan-progress/0.3.0/hooks/register.tsx	2026-10-02 12:19:37.084135300 +0900
++++ plugins/plan-progress/hooks/register.tsx	2026-10-02 17:30:06.195426200 +0900
+@@ -10,6 +10,7 @@
+ const FIGURE_SPACE = String.fromCharCode(0x2007)
+ const isOpen = atom({ plugin: 'plan-progress', key: 'isOpen' } as const, true)
+ const tick = atom({ plugin: 'plan-progress', key: 'tick' } as const, 0)
++const isRestoreChecked = atom({ plugin: 'plan-progress', key: 'isRestoreChecked' } as const, false)
+ const STRIP_H = 18
+ const STRIP_GAP = 3
+ const MAX_STRIPS = 4 // past this, the finished ones fold into one "+N more" strip
+@@ -89,6 +90,7 @@
+     state,
+     note: str(input.note, 160) || null,
+     startedAt: prev && prev.title === title ? prev.startedAt : now,
++    ...(prev?.hidden ? { hidden: true } : {}),
+   }
+ }
+ 
+@@ -181,6 +183,9 @@
+ const hex = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+ const mix = (a: number[], b: number[], m: number) => a.map((v, i) => Math.round(v + ((b[i] ?? 0) - v) * m))
+ const rgb = (c: number[]) => `rgb(${c.join(',')})`
++const SYSTEM_FONT = "ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif"
++const VIETNAMESE_LETTERS = /[\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]/
++const fontClass = (s: string) => (VIETNAMESE_LETTERS.test(s) ? ' sf' : '')
+ const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
+ const hash = (a: number, b: number, k: number) => {
+   const x = Math.sin(a * 127.1 + b * 311.7 + k * 74.7) * 43758.5453
+@@ -287,7 +292,7 @@
+     const left = -kw / 2 + 10
+     knob = `<rect x="${-kw / 2}" y="0" width="${kw}" height="${H}" rx="${H / 2}" fill="${color}"/>`
+     if (icon) knob += `<path d="${icon}" transform="translate(${left} 5) scale(.5)" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>`
+-    knob += `<text x="${left + iconW}" y="${H / 2 + 4.2}" class="kt">${esc(shown)}<tspan class="kc" dx="6">${count}</tspan></text>`
++    knob += `<text x="${left + iconW}" y="${H / 2 + 4.2}" class="kt${fontClass(shown)}">${esc(shown)}<tspan class="kc" dx="6">${count}</tspan></text>`
+   }
+   const clampX = (x: number) => Math.max(kw / 2, Math.min(W - kw / 2, x))
+   const kx = clampX(fx)
+@@ -301,8 +306,9 @@
+ .t0,.t1,.t2,.t3{animation:tw ${done ? 3.2 : 2.2}s ease-in-out infinite}
+ .t1{animation-duration:${done ? 3.8 : 2.8}s;animation-delay:-.7s}.t2{animation-duration:${done ? 4.4 : 1.9}s;animation-delay:-1.3s}.t3{animation-duration:${done ? 3.5 : 3.3}s;animation-delay:-.4s}
+ @keyframes tw{0%,100%{opacity:1}50%{opacity:${done ? 0.8 : 0.45}}}
+-.kt{font:500 12px 'Anthropic Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;fill:#fff}
++.kt{font:500 12px 'Anthropic Sans',${SYSTEM_FONT};fill:#fff}
+ .kc{font-weight:400;fill-opacity:.75}
++.sf{font-family:${SYSTEM_FONT}}
+ @media (prefers-reduced-motion:reduce){.t0,.t1,.t2,.t3{animation:none}}
+ </style>`
+   const glideFill = glide ? `<animate attributeName="width" from="${from.toFixed(1)}" to="${fx.toFixed(1)}" dur=".45s" ${ease} fill="freeze"/>` : ''
+@@ -386,7 +392,7 @@
+     rows.push(
+       `<rect x="0" y="${y}" width="${W}" height="${STRIP_H}" rx="${STRIP_H / 2}" fill="${c}" fill-opacity=".15">${flow('fill')}</rect>${px}` +
+         `<circle cx="${10 + indent}" cy="${y + STRIP_H / 2}" r="3" fill="${c}"${a.state === 'running' ? ' class="sd"' : ''}>${flow('fill')}</circle>` +
+-        `<text x="${nameX}" y="${y + 12.5}" class="sn">${esc(name)}</text>` +
++        `<text x="${nameX}" y="${y + 12.5}" class="sn${fontClass(name)}">${esc(name)}</text>` +
+         tool,
+     )
+   })
+@@ -398,7 +404,7 @@
+         `<text x="10" y="${y + 12.5}" class="sn st">+${plural(v.hidden.length, 'more agent')} · ${doneCount} done</text>`,
+     )
+   }
+-  return `<style>.sn{font:400 11.5px 'Anthropic Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;fill:#F0EEFC}.st{fill-opacity:.65}
++  return `<style>.sn{font:400 11.5px 'Anthropic Sans',${SYSTEM_FONT};fill:#F0EEFC}.st{fill-opacity:.65}.sf{font-family:${SYSTEM_FONT}}
+ .sd{animation:sp 1.1s ease-in-out infinite}@keyframes sp{50%{opacity:.3}}
+ .mi{animation:mi ${MORPH} ease-out both}@keyframes mi{from{opacity:0;filter:blur(3px)}}
+ .mo{animation:mo ${MORPH} ease-in both}@keyframes mo{to{opacity:0;filter:blur(3px)}}
+@@ -522,10 +528,16 @@
+   if (before !== undefined && after !== undefined) chime($, before, after)
+ }
+ 
+-async function dropPlan($: EngineInterface, id: string) {
+-  lastHead.delete(id)
+-  for (const p of await read($, plans)) if (p.id === id) for (const a of p.agents ?? []) lastStrip.delete(a.id)
+-  await update($, plans, list => list.filter(p => p.id !== id))
++async function hidePlan($: EngineInterface, id: string) {
++  await update($, plans, list => list.map(p => (p.id === id ? { ...p, hidden: true } : p)))
++}
++
++async function toggleBars($: EngineInterface): Promise<boolean> {
++  const isShown = (await read($, isOpen)) && (await read($, plans)).some(p => !p.hidden)
++  await update($, plans, list => list.map(p => (p.hidden ? { ...p, hidden: false } : p)))
++  await update($, isOpen, () => !isShown)
++
++  return !isShown
+ }
+ 
+ const STEP_SCHEMA = {
+@@ -546,6 +558,60 @@
+ const WORK_BEFORE_PLAN = 3 // the 4th changing call without a plan is refused once
+ const CALLS_BEFORE_NUDGE = 6 // working calls without a plan update before a reminder
+ 
++// an open bar at the end of a turn: a question to the user marks it waiting on its own;
++// only a turn that did work and left the bar unexplained is sent back once
++async function sendBackOpenBars($: EngineInterface, answer: string, didWork: boolean): Promise<boolean> {
++  const open = (await read($, plans)).filter(isOpenPlan)
++  if (open.length === 0) return false
++  if (/\?\s*$/.test(answer)) {
++    const last = open[open.length - 1]
++    if (last) await putPlan($, { ...last, state: 'needs_input' })
++
++    return false
++  }
++  if (!didWork) return false
++  void $.prompt
++    .submit({
++      text: `plan-progress: ${open.map(p => p.id).join(', ')} still open. Update each with ${TOOL}: {id, next:true}, or state "done", "needs_input" or "error" with a note.`,
++    })
++    .catch(() => undefined)
++
++  return true
++}
++
++const CLEAR_COMMAND = /(^|<command-name>)\s*\/progress-clear\b/
++
++function closeFinished(p: Plan): Plan {
++  const steps = p.stages.flatMap(s => s.steps)
++  return p.state !== 'done' && steps.length > 0 && steps.every(s => isFinished(s.status)) ? { ...p, state: 'done' } : p
++}
++
++async function replayBars($: EngineInterface): Promise<boolean> {
++  const messages = (await $.session.messages().catch(() => undefined)) ?? []
++  if (messages.length === 0) return false
++  const now = await $.clock.now()
++  let replayed: Plan[] = []
++  for (const message of messages) {
++    const isPersonTyping = message.role === 'user' && message.text.trim() !== '' && (message.toolResults ?? []).length === 0
++    if (isPersonTyping && CLEAR_COMMAND.test(message.text)) replayed = []
++    else if (isPersonTyping) replayed = replayed.map(p => (p.state === 'needs_input' ? { ...p, state: 'running', note: null } : p))
++    for (const use of message.toolUses) {
++      if (use.tool !== TOOL || use.isError === true || use.text === undefined) continue
++      const id = slug(str(use.input.id, 60) || str(use.input.title, 80))
++      const next = normalize(use.input, replayed.find(p => p.id === id) ?? null, now, id)
++      if (next.stages.length > 0) replayed = placeBar(replayed, next).map(closeFinished)
++    }
++  }
++  if (replayed.length > 0) await update($, plans, current => (current.length === 0 ? replayed : current))
++
++  return true
++}
++
++async function restoreBarsOnce($: EngineInterface): Promise<void> {
++  if (await read($, isRestoreChecked)) return
++  const isChecked = (await read($, plans)).length > 0 || (await replayBars($))
++  if (isChecked) await update($, isRestoreChecked, () => true)
++}
+ 
+ export const register: Register = on => {
+   // per-turn bookkeeping; module variables are fine here, a reload just starts a fresh count
+@@ -555,26 +621,38 @@
+   let hasRefused = false
+   let isWaitingOnBackground = false
+ 
++  let isRulesSent = false
++  let hasSentBack = false
++
+   on('turn.start', async ($, e, next) => {
+     workCalls = 0
+     sinceUpdate = 0
+     isPlanTouched = false
+     hasRefused = false
+     isWaitingOnBackground = false
++    await restoreBarsOnce($)
+ 
+     return next(e)
+   })
+ 
+-  // the rule lives in the cached system prompt; a message only carries one short line when bars are open,
++  // the rules ride the session's first prompt; a message only carries one short line when bars are open,
+   // and the person answering clears any "needs input" without a model call
+   on('prompt.submit', async ($, e, next) => {
+-    if (e.origin.kind !== 'composer') return next(e)
++    if (e.origin.kind !== 'plugin' || e.origin.name !== 'plan-progress') hasSentBack = false
++    const enter = async (entering: typeof e) => {
++      if (isRulesSent) return next(entering)
++      const entered = await next({ ...entering, context: [...(entering.context ?? []), RULES] })
++      if (entered.drop === undefined) isRulesSent = true
++
++      return entered
++    }
++    if (e.origin.kind !== 'composer') return enter(e)
+     const list = await read($, plans)
+     if (list.some(p => p.state === 'needs_input')) {
+       await update($, plans, all => all.map(p => (p.state === 'needs_input' ? { ...p, state: 'running' as const, note: null } : p)))
+     }
+     const open = list.filter(p => p.state !== 'done' && p.id !== AGENTS)
+-    if (open.length === 0) return next(e)
++    if (open.length === 0) return enter(e)
+     const line = `plan-progress open bars: ${open
+       .map(p => {
+         const w = where(p)
+@@ -582,7 +660,20 @@
+       })
+       .join(', ')}`
+ 
+-    return next({ ...e, context: [...(e.context ?? []), line] })
++    return enter({ ...e, context: [...(e.context ?? []), line] })
++  })
++
++  on('session.compact', async ($, e, next) => {
++    const result = await next(e)
++    if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) isRulesSent = false
++
++    return result
++  })
++
++  on('session.end', async ($, e, next) => {
++    isRulesSent = false
++
++    return next(e)
+   })
+ 
+   // watches the main loop's changing calls: refuses once when multi-step work starts without a bar,
+@@ -621,28 +712,6 @@
+     return ran
+   })
+ 
+-  // an open bar at the end of a turn: a question to the user marks it waiting on its own;
+-  // only a turn that did work and left the bar unexplained is sent back once
+-  on('classic.Stop', async ($, e, next) => {
+-    const result = await next(e)
+-    if (e.stop_hook_active || result.block || isWaitingOnBackground || (e.background_tasks?.length ?? 0) > 0) return result
+-    const open = (await read($, plans)).filter(isOpenPlan)
+-    if (open.length === 0) return result
+-    const asks = /\?\s*$/.test(e.last_assistant_message ?? '')
+-    if (asks) {
+-      const last = open[open.length - 1]
+-      if (last) await putPlan($, { ...last, state: 'needs_input' })
+-
+-      return result
+-    }
+-    if (workCalls === 0 && !isPlanTouched) return result
+-
+-    return {
+-      ...result,
+-      block: `plan-progress: ${open.map(p => p.id).join(', ')} still open. Update each with ${TOOL}: {id, next:true}, or state "done", "needs_input" or "error" with a note.`,
+-    }
+-  })
+-
+   on('session.start', async ($, e, next) => {
+     await $.tool.register({
+       name: 'plan_progress',
+@@ -675,14 +744,10 @@
+     await $.command.register({ name: 'progress-demo', description: 'Show a sample plan in the progress bars' })
+     await $.command.register({ name: 'progress-sounds', description: 'Play the decision, error and done sounds' })
+     await $.command.register({ name: 'progress-clear', description: 'Remove all progress bars' })
++    const started = await next(e)
++    await restoreBarsOnce($)
+ 
+-    return next(e)
+-  })
+-
+-  on('prompt.compose', async ($, e, next) => {
+-    const result = await next(e)
+-
+-    return { sections: [...result.sections, { id: 'plan-progress:rules', text: RULES, scope: 'session' as const }] }
++    return started
+   })
+ 
+   on('tool.call', { tool: TOOL }, async ($, e) => {
+@@ -726,10 +791,9 @@
+ 
+   on('command.run', { command: 'progress' }, async $ => {
+     if ((await read($, plans)).length === 0) return { text: 'No plan yet. /progress-demo shows a sample.' }
+-    const open = await read($, isOpen)
+-    await update($, isOpen, () => !open)
++    const isShown = await toggleBars($)
+ 
+-    return { text: open ? 'Progress bars hidden.' : 'Progress bars shown.' }
++    return { text: isShown ? 'Progress bars shown.' : 'Progress bars hidden.' }
+   })
+ 
+   on('command.run', { command: 'progress-demo' }, async $ => {
+@@ -755,26 +819,27 @@
+ 
+   // always drawn, so the person sees the mod is loaded; dim while there is nothing to show
+   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+-    const count = (await read($, plans)).length
+-    const open = await read($, isOpen)
++    const all = await read($, plans)
++    const count = all.length
++    const isShown = (await read($, isOpen)) && all.some(p => !p.hidden)
+     const { Box, Button } = $.ui.resolve(e)
+     // other mods add their labels to modes beneath us; keep them
+     const below = await next(e)
+     const press = () =>
+       count === 0
+         ? $.ui.toast('plan-progress is on. A bar appears when Claude starts a task with several steps.')
+-        : update($, isOpen, () => !open)
++        : toggleBars($)
+ 
+     return (
+       <Box flexDirection="row" alignItems="center" gap={1}>
+-        <Button key="progress-toggle" dimColor={count === 0 || !open} label={count > 1 ? `Progress ${count}` : 'Progress'} onPress={press} />
++        <Button key="progress-toggle" dimColor={!isShown} label={count > 1 ? `Progress ${count}` : 'Progress'} onPress={press} />
+         {below}
+       </Box>
+     )
+   })
+ 
+   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+-    const list = await read($, plans)
++    const list = (await read($, plans)).filter(p => !p.hidden)
+     if (list.length === 0 || e.props.hasSurvey || !(await read($, isOpen))) return next(e)
+     const t = $.ui.resolve(e)
+     const { Box, Button, Text } = t
+@@ -826,7 +891,7 @@
+                 </Text>
+               )}
+               <Text dimColor>{`${String(pct).padStart(3, FIGURE_SPACE)}%`}</Text>
+-              <Button key={`close-${p.id}`} plain dimColor label="✕" onPress={() => dropPlan($, p.id)} />
++              <Button key={`close-${p.id}`} plain dimColor label="✕" onPress={() => hidePlan($, p.id)} />
+             </Box>,
+           ]
+         })}
+@@ -899,6 +964,9 @@
+       const steps = p.stages.flatMap(s => s.steps)
+       if (steps.length > 0 && steps.every(s => isFinished(s.status))) await putPlan($, { ...p, state: 'done' })
+     }
++    if (!agentId && e.reason === 'answer' && !hasSentBack && !isWaitingOnBackground && agentHome.size === 0) {
++      hasSentBack = await sendBackOpenBars($, e.answer, workCalls > 0 || isPlanTouched)
++    }
+ 
+     return next(e)
+   })
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/skills/plan-progress/SKILL.md plugins/plan-progress/skills/plan-progress/SKILL.md
+--- upstream/plan-progress/0.3.0/skills/plan-progress/SKILL.md	2026-10-02 12:19:37.093746900 +0900
++++ plugins/plan-progress/skills/plan-progress/SKILL.md	2026-10-02 13:32:55.071348600 +0900
+@@ -1,6 +1,6 @@
+ ---
+ name: plan-progress
+-description: Reference for the plan_progress bars (tool ops, /progress commands). The working rules are already in the system prompt; load only when the user asks about the bars or a call was refused.
++description: Reference for the plan_progress bars (tool ops, /progress commands). The working rules arrive with the session's first prompt; load only when the user asks about the bars or a call was refused.
+ ---
+ 
+ # plan_progress
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/tests/close.test.tsx plugins/plan-progress/tests/close.test.tsx
+--- upstream/plan-progress/0.3.0/tests/close.test.tsx	1970-01-01 09:00:00.000000000 +0900
++++ plugins/plan-progress/tests/close.test.tsx	2026-10-02 17:29:27.744458900 +0900
+@@ -0,0 +1,91 @@
++import { describe, expect, mock, test } from 'claude-code/testing'
++import type { On } from 'claude-code'
++import type { Engine } from 'claude-code/testing'
++
++const TOOL = 'mcp__plan-progress__plan_progress'
++const PLUGIN = 'plan-progress'
++
++const BAND_PROPS = {
++  hasSurvey: false,
++  isWorking: false,
++  maxRows: 12,
++  bodyColumns: 100,
++  scroll: { offset: 0, bodyRows: 12 },
++  view: {},
++}
++
++type World = { toasts: string[] }
++
++function world(on: On): World {
++  const w: World = { toasts: [] }
++  mock.clock(on)
++  on('tool.call', async () => ({ result: undefined as never }))
++  on('command.run', async () => ({ text: '' }))
++  on('audio.play', async () => ({ value: undefined }))
++  on('ui.toast', async (_$, e) => {
++    w.toasts.push(e.text)
++    return { value: undefined }
++  })
++  on('ui.render', async () => <></>)
++  return w
++}
++
++const createTask = ($: Engine) =>
++  $.tool.call({
++    tool: TOOL,
++    id: 'task',
++    title: 'Task',
++    stages: [{ name: 'Build', steps: [{ title: 'One', status: 'active' }, { title: 'Two', status: 'pending' }, { title: 'Three', status: 'pending' }] }],
++  })
++
++const band = ($: Engine) => $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
++const footer = ($: Engine) => $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'SessionMode', props: { modes: [] } })
++
++const isDrawn = async ($: Engine) => {
++  const ui = await band($)
++  const close = await ui.find({ type: 'Button', key: 'close-task' })
++  await ui.unmount()
++  return close !== undefined
++}
++
++describe('closing a bar', () => {
++  test('✕ hides the bar, and Progress brings it back instead of the empty-session toast', async ($, on) => {
++    const w = world(on)
++    await createTask($)
++    const ui = await band($)
++    await ui.press({ key: 'close-task' })
++    await ui.unmount()
++    expect(await isDrawn($)).toBe(false)
++
++    const mode = await footer($)
++    await mode.press({ key: 'progress-toggle' })
++    await mode.unmount()
++
++    expect(w.toasts).toEqual([])
++    expect(await isDrawn($)).toBe(true)
++  })
++
++  test('a hidden bar stays hidden while Claude moves it on, and /progress shows it at its new step', async ($, on) => {
++    world(on)
++    await createTask($)
++    const ui = await band($)
++    await ui.press({ key: 'close-task' })
++    await ui.unmount()
++
++    const moved = await $.tool.call({ tool: TOOL, id: 'task', next: true })
++    expect(moved.result).toContain('task: 1/3, running, active "Two"')
++    expect(await isDrawn($)).toBe(false)
++
++    const shown = await $.command.run({ command: 'progress', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
++    expect(shown.text).toBe('Progress bars shown.')
++    expect(await isDrawn($)).toBe(true)
++  })
++
++  test('with no bar at all, Progress still shows the toast', async ($, on) => {
++    const w = world(on)
++    const mode = await footer($)
++    await mode.press({ key: 'progress-toggle' })
++
++    expect(w.toasts).toEqual(['plan-progress is on. A bar appears when Claude starts a task with several steps.'])
++  })
++})
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/tests/render.test.tsx plugins/plan-progress/tests/render.test.tsx
+--- upstream/plan-progress/0.3.0/tests/render.test.tsx	1970-01-01 09:00:00.000000000 +0900
++++ plugins/plan-progress/tests/render.test.tsx	2026-10-02 13:44:59.655276400 +0900
+@@ -0,0 +1,50 @@
++import { describe, expect, mock, test } from 'claude-code/testing'
++import type { On } from 'claude-code'
++import type { Engine } from 'claude-code/testing'
++
++const TOOL = 'mcp__plan-progress__plan_progress'
++
++const BAND_PROPS = {
++  hasSurvey: false,
++  isWorking: false,
++  maxRows: 12,
++  bodyColumns: 100,
++  scroll: { offset: 0, bodyRows: 12 },
++  view: {},
++}
++
++function world(on: On) {
++  mock.clock(on)
++  on('ui.render', async () => <></>)
++  on('ui.toast', async () => ({ value: undefined }))
++  on('audio.play', async () => ({ value: undefined }))
++}
++
++async function trackSource($: Engine, stage: string): Promise<string> {
++  await $.tool.call({
++    tool: TOOL,
++    id: 'bar',
++    title: 'Bar',
++    stages: [{ name: stage, steps: [{ title: 'First', status: 'active' }, { title: 'Second', status: 'pending' }] }],
++  })
++  const ui = await $.ui.mount({ plugin: 'plan-progress', surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
++  const svg = await ui.find({ type: 'Svg' })
++  return String(svg?.props.source ?? '')
++}
++
++describe('track text font', () => {
++  test('a Vietnamese stage name is drawn in the system font', async ($, on) => {
++    world(on)
++    const source = await trackSource($, 'Viết lại')
++
++    expect(source).toContain('class="kt sf">Viết lại')
++    expect(source).toContain('.sf{font-family:')
++  })
++
++  test('a name without Vietnamese letters keeps Anthropic Sans', async ($, on) => {
++    world(on)
++    const source = await trackSource($, 'Read code')
++
++    expect(source).toContain('class="kt">Read code')
++  })
++})
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/tests/restore.test.tsx plugins/plan-progress/tests/restore.test.tsx
+--- upstream/plan-progress/0.3.0/tests/restore.test.tsx	1970-01-01 09:00:00.000000000 +0900
++++ plugins/plan-progress/tests/restore.test.tsx	2026-10-02 16:54:24.145841100 +0900
+@@ -0,0 +1,123 @@
++import { describe, expect, mock, test } from 'claude-code/testing'
++import type { On, SessionMessage, ToolUseSummary } from 'claude-code'
++import type { Engine } from 'claude-code/testing'
++
++const TOOL = 'mcp__plan-progress__plan_progress'
++
++const BAND_PROPS = {
++  hasSurvey: false,
++  isWorking: false,
++  maxRows: 12,
++  bodyColumns: 100,
++  scroll: { offset: 0, bodyRows: 12 },
++  view: {},
++}
++
++const TASK = {
++  id: 'task',
++  title: 'Task',
++  stages: [{ name: 'Build', steps: [{ title: 'One', status: 'active' }, { title: 'Two', status: 'pending' }] }],
++}
++
++let useCount = 0
++
++function barCall(input: Record<string, unknown>, isError = false): ToolUseSummary {
++  useCount += 1
++  return { tool_use_id: `use-${useCount}`, tool: TOOL, input, text: isError ? 'no bar' : 'ok', ...(isError ? { isError: true as const } : {}) }
++}
++
++const said = (text: string): SessionMessage => ({ role: 'user', text, toolUses: [] })
++const called = (...toolUses: ToolUseSummary[]): SessionMessage => ({ role: 'assistant', text: '', toolUses })
++
++const LOCAL_COMMAND_CAVEAT =
++  "<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"
++const ran = (name: string): SessionMessage[] => [
++  said(LOCAL_COMMAND_CAVEAT),
++  said(`<command-name>/${name}</command-name>\n            <command-message>${name}</command-message>\n            <command-args></command-args>`),
++]
++
++type World = { transcript: SessionMessage[] }
++
++function world(on: On, transcript: SessionMessage[]): World {
++  const w: World = { transcript }
++  mock.clock(on)
++  on('session.messages', async () => ({ value: w.transcript }))
++  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
++  on('tool.register', async () => ({ value: undefined }))
++  on('command.register', async () => ({ value: undefined }))
++  on('tool.call', async () => ({ result: undefined as never }))
++  on('audio.play', async () => ({ value: undefined }))
++  on('ui.toast', async () => ({ value: undefined }))
++  on('ui.render', async () => <></>)
++  return w
++}
++
++const start = ($: Engine) => $.session.start({ cwd: 'C:/repo', surface: 'desktop', isInteractive: true })
++
++const advance = ($: Engine, id: string) => $.tool.call({ tool: TOOL, id, next: true })
++
++const isRefused = (result: unknown) => (result as { deny?: string }).deny?.includes('no bar') === true
++
++describe('bars after a rewind or resume', () => {
++  test('a new process draws the bars its transcript left, as they stood at the rewind point', async ($, on) => {
++    world(on, [said('do it'), called(barCall(TASK)), called(barCall({ id: 'task', next: true })), called(barCall({ id: 'ghost', next: true }, true))])
++    await start($)
++
++    const task = await advance($, 'task')
++    expect(task.result).toContain('task: 2/2, done')
++    const ghost = await advance($, 'ghost')
++    expect(isRefused(ghost)).toBe(true)
++  })
++
++  test('a prompt typed after a waiting bar sets it running again, and /progress-clear drops the bars before it', async ($, on) => {
++    world(on, [
++      called(barCall({ ...TASK, id: 'old', title: 'Old' })),
++      ...ran('progress-clear'),
++      called(barCall({ ...TASK, state: 'needs_input', note: 'which one?' })),
++      said('the first one'),
++    ])
++    await start($)
++
++    const ui = await $.ui.mount({ plugin: 'plan-progress', surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
++    expect(await ui.find({ type: 'Text', text: '?' })).toBeUndefined()
++    await ui.unmount()
++    expect((await advance($, 'task')).result).toContain('task: 1/2, running')
++    expect(isRefused(await advance($, 'old'))).toBe(true)
++  })
++
++  test('/progress and /progress-demo in the transcript leave the bars alone', async ($, on) => {
++    world(on, [called(barCall(TASK)), ...ran('progress'), ...ran('progress-demo')])
++    await start($)
++
++    expect((await advance($, 'task')).result).toContain('task: 1/2, running')
++  })
++
++  test('the transcript is replayed once per process, so a reload never brings back a bar', async ($, on) => {
++    const w = world(on, [said('do it'), called(barCall(TASK))])
++    await start($)
++    w.transcript = [...w.transcript, called(barCall({ ...TASK, id: 'later', title: 'Later' }))]
++    await start($)
++
++    expect(isRefused(await advance($, 'later'))).toBe(true)
++  })
++
++  test('bars removed with /progress-clear stay removed when the module reloads', async ($, on) => {
++    world(on, [said('do it'), called(barCall(TASK))])
++    on('command.run', async () => ({ text: '' }))
++    await start($)
++    await $.command.run({ command: 'progress-clear', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
++    await start($)
++
++    expect(isRefused(await advance($, 'task'))).toBe(true)
++  })
++
++  test('a session whose transcript is still empty at start replays at its first turn', async ($, on) => {
++    const w = world(on, [])
++    on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
++    await start($)
++    w.transcript = [said('go on'), called(barCall(TASK))]
++    await $.turn.start({ text: 'go on', turnId: 'turn-1' })
++
++    expect((await advance($, 'task')).result).toContain('task: 1/2, running')
++  })
++})
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/tests/rules.test.tsx plugins/plan-progress/tests/rules.test.tsx
+--- upstream/plan-progress/0.3.0/tests/rules.test.tsx	1970-01-01 09:00:00.000000000 +0900
++++ plugins/plan-progress/tests/rules.test.tsx	2026-10-02 13:34:36.867676500 +0900
+@@ -0,0 +1,114 @@
++import { describe, expect, mock, test } from 'claude-code/testing'
++import type { On, PromptOrigin } from 'claude-code'
++import type { Engine } from 'claude-code/testing'
++
++const RULES_HEAD = '# Progress bars'
++const TOOL = 'mcp__plan-progress__plan_progress'
++const KEPT = [{ role: 'user' as const, text: 'summary', toolUses: [] }]
++
++type World = { contexts: (readonly string[])[] }
++
++function world(on: On, skipsCompaction = false): World {
++  const w: World = { contexts: [] }
++  on('prompt.submit', async (_$, e) => {
++    w.contexts.push(e.context ?? [])
++    return { text: e.text, context: e.context }
++  })
++  on('session.compact', async () => (skipsCompaction ? { skip: 'not now' } : { messages: KEPT }))
++  on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
++  return w
++}
++
++const submit = ($: Engine, text: string, origin: PromptOrigin = { kind: 'composer' }) =>
++  $.prompt.submit({ text, wait: false, origin })
++
++const rulesIn = (context: readonly string[] | undefined) =>
++  (context ?? []).filter(entry => entry.startsWith(RULES_HEAD)).length
++
++describe('rules delivery', () => {
++  test('the first prompt carries the rules once, later prompts do not', async ($, on) => {
++    const w = world(on)
++    await submit($, 'first')
++    await submit($, 'second')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 0])
++    expect(w.contexts[0]?.[0]).toContain(TOOL)
++  })
++
++  test('a prompt from outside the composer carries them too', async ($, on) => {
++    const w = world(on)
++    await submit($, 'from the sdk', { kind: 'sdk' })
++    await submit($, 'typed')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 0])
++  })
++
++  test('a dropped prompt leaves the rules for the next one', async ($, on) => {
++    let dropping = true
++    const w: World = { contexts: [] }
++    on('prompt.submit', async (_$, e) => {
++      w.contexts.push(e.context ?? [])
++      return dropping ? { drop: 'blocked' } : { text: e.text, context: e.context }
++    })
++    await submit($, 'blocked one')
++    dropping = false
++    await submit($, 'entered one')
++    await submit($, 'another')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 1, 0])
++  })
++
++  test('a compaction of the main conversation sends them again', async ($, on) => {
++    const w = world(on)
++    await submit($, 'first')
++    await $.session.compact({ trigger: 'auto', messages: KEPT })
++    await submit($, 'after compaction')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 1])
++  })
++
++  test('precompute and a subagent compaction keep them sent', async ($, on) => {
++    const w = world(on)
++    await submit($, 'first')
++    await $.session.compact({ trigger: 'precompute', messages: KEPT })
++    await $.session.compact({ trigger: 'auto', agentId: 'agent-1', messages: KEPT })
++    await submit($, 'second')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 0])
++  })
++
++  test('a skipped compaction keeps them sent', async ($, on) => {
++    const w = world(on, true)
++    await submit($, 'first')
++    await $.session.compact({ trigger: 'manual', messages: KEPT })
++    await submit($, 'second')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 0])
++  })
++
++  test('/clear sends them again', async ($, on) => {
++    const w = world(on)
++    await submit($, 'first')
++    await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
++    await submit($, 'after clear')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 1])
++  })
++
++  test('open bars still add their line beside the rules', async ($, on) => {
++    const w = world(on)
++    mock.clock(on)
++    await $.tool.call({
++      tool: TOOL,
++      id: 'ship',
++      title: 'Ship',
++      stages: [{ name: 'Build', steps: [{ title: 'Compile', status: 'active' }] }],
++    })
++    await submit($, 'first')
++    await submit($, 'second')
++
++    expect(w.contexts.map(rulesIn)).toEqual([1, 0])
++    expect(w.contexts[0]?.some(entry => entry.startsWith('plan-progress open bars: ship'))).toBe(true)
++    expect(w.contexts[1]?.some(entry => entry.startsWith('plan-progress open bars: ship'))).toBe(true)
++  })
++})
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/tests/send-back.test.tsx plugins/plan-progress/tests/send-back.test.tsx
+--- upstream/plan-progress/0.3.0/tests/send-back.test.tsx	1970-01-01 09:00:00.000000000 +0900
++++ plugins/plan-progress/tests/send-back.test.tsx	2026-10-02 14:16:18.678275600 +0900
+@@ -0,0 +1,100 @@
++import { describe, expect, mock, test } from 'claude-code/testing'
++import type { On, PromptOrigin } from 'claude-code'
++import type { Engine } from 'claude-code/testing'
++
++const TOOL = 'mcp__plan-progress__plan_progress'
++
++const BAND_PROPS = {
++  hasSurvey: false,
++  isWorking: false,
++  maxRows: 12,
++  bodyColumns: 100,
++  scroll: { offset: 0, bodyRows: 12 },
++  view: {},
++}
++
++type World = { prompts: { text: string; origin: PromptOrigin }[] }
++
++function world(on: On): World {
++  const w: World = { prompts: [] }
++  mock.clock(on)
++  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
++  on('turn.complete', async (_$, e) => ({ text: e.answer }))
++  on('prompt.submit', async (_$, e) => {
++    w.prompts.push({ text: e.text, origin: e.origin })
++    return { text: e.text, context: e.context }
++  })
++  on('tool.call', async () => ({ result: undefined as never }))
++  on('audio.play', async () => ({ value: undefined }))
++  on('ui.toast', async () => ({ value: undefined }))
++  on('ui.render', async () => <></>)
++  return w
++}
++
++const sentBack = (w: World) => w.prompts.filter(p => p.origin.kind === 'plugin' && p.text.includes('still open'))
++
++async function workTurn($: Engine, turnId: string, answer: string, opts: { agentId?: string; reason?: 'answer' | 'aborted' } = {}) {
++  await $.turn.start({ text: 'do it', turnId })
++  await $.tool.call({
++    tool: TOOL,
++    id: 'task',
++    title: 'Task',
++    stages: [{ name: 'Build', steps: [{ title: 'One', status: 'active' }, { title: 'Two', status: 'pending' }] }],
++  })
++  await $.tool.call({ tool: 'Edit', file_path: 'a.ts', old_string: 'a', new_string: 'b' })
++  await $.turn.complete({
++    reason: opts.reason ?? 'answer',
++    answer,
++    durationMs: 1,
++    isAborted: opts.reason === 'aborted',
++    turnId,
++    ...(opts.agentId ? { agentId: opts.agentId } : {}),
++  })
++}
++
++describe('sending an unexplained open bar back', () => {
++  test('a turn that did work and left the bar open is sent back once by a plugin prompt', async ($, on) => {
++    const w = world(on)
++    await workTurn($, 'turn-1', 'Edited the file.')
++
++    expect(sentBack(w)).toHaveLength(1)
++    expect(sentBack(w)[0]?.origin).toEqual({ kind: 'plugin', name: 'plan-progress' })
++    expect(sentBack(w)[0]?.text).toContain('task still open')
++  })
++
++  test('the plugin prompt does not re-arm it; the person’s next prompt does', async ($, on) => {
++    const w = world(on)
++    await workTurn($, 'turn-1', 'Edited the file.')
++    await workTurn($, 'turn-2', 'Edited again.')
++    expect(sentBack(w)).toHaveLength(1)
++
++    await $.prompt.submit({ text: 'continue', wait: false, origin: { kind: 'composer' } })
++    await workTurn($, 'turn-3', 'Edited once more.')
++    expect(sentBack(w)).toHaveLength(2)
++  })
++
++  test('an answer ending in a question marks the bar as waiting instead', async ($, on) => {
++    const w = world(on)
++    await workTurn($, 'turn-1', 'Which file should I change next?')
++
++    expect(sentBack(w)).toHaveLength(0)
++    const ui = await $.ui.mount({ plugin: 'plan-progress', surface: 'desktop', component: 'AbovePrompt', props: BAND_PROPS })
++    expect(await ui.find({ type: 'Text', text: '?' })).toBeDefined()
++  })
++
++  test('a subagent turn or an interrupted turn is never sent back', async ($, on) => {
++    const w = world(on)
++    await workTurn($, 'turn-1', 'Edited the file.', { agentId: 'agent-1' })
++    await workTurn($, 'turn-2', 'Edited the file.', { reason: 'aborted' })
++
++    expect(sentBack(w)).toHaveLength(0)
++  })
++
++  test('no classic.Stop hook is left to block the stop', async ($, on) => {
++    world(on)
++    on('classic.Stop', async () => ({}))
++    const result = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'done' } as never)
++
++    expect(result.block).toBeUndefined()
++  })
++})
+diff -ruN -x .in_use -x .claude-plugin/types upstream/plan-progress/0.3.0/types/index.d.ts plugins/plan-progress/types/index.d.ts
+--- upstream/plan-progress/0.3.0/types/index.d.ts	2026-10-02 12:19:37.117141500 +0900
++++ plugins/plan-progress/types/index.d.ts	2026-10-02 17:29:08.892792900 +0900
+@@ -24,6 +24,7 @@
+   agents?: AgentRun[]
+   // when the current batch of agents all finished; their strips fold a few seconds later
+   agentsDoneAt?: number | null
++  hidden?: boolean
+ }
+ 
+ declare module 'claude-code' {
+@@ -33,6 +34,7 @@
+       isOpen: boolean
+       // bumped every second while agents run, so elapsed times and folding redraw
+       tick: number
++      isRestoreChecked: boolean
+     }
+   }
+ }

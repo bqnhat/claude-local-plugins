@@ -1,0 +1,31 @@
+{
+  "name": "nhat-local",
+  "owner": {
+    "name": "bqnhat"
+  },
+  "metadata": {
+    "description": "Local, unpublished Claude Code plugins"
+  },
+  "plugins": [
+    {
+      "name": "next-steps-desktop",
+      "source": "./plugins/next-steps-desktop",
+      "description": "next-steps with a Claude Code Desktop renderer: suggests up to three next prompts, above the input in the terminal and behind a 💡 footer chip and Next steps pane on Desktop; a press puts one in the composer as a draft"
+    },
+    {
+      "name": "plan-progress",
+      "source": "./plugins/plan-progress",
+      "description": "plan-progress (zycck/claude-mods) with its rules sent through prompt.submit, so they reach the model where prompt.compose is skipped for user plugins; on Desktop the bars live in a Progress pane with step times and history"
+    },
+    {
+      "name": "cache-timer",
+      "source": "./plugins/cache-timer",
+      "description": "A dim Cache mm:ss countdown in the Claude Code Desktop footer: how long the prompt cache stays warm since the last model response"
+    },
+    {
+      "name": "session-hub",
+      "source": "./plugins/session-hub",
+      "description": "One Mod status pane for Claude Code Desktop with an icon rail: Progress bars, Next steps suggestions and the prompt-cache countdown, opened from one footer entry"
+    }
+  ]
+}

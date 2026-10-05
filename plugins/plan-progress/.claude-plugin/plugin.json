@@ -1,0 +1,8 @@
+{
+  "name": "plan-progress",
+  "version": "0.3.0-local.15",
+  "description": "Live plan progress bars with stages, steps, step times and soft sounds for decision, error and done. Local fork of zycck/claude-mods plan-progress 0.3.0 (ea2c96b) that sends its rules with the first prompt instead of prompt.compose and sends an unexplained open bar back from turn.complete instead of classic.Stop, redraws the bars from the transcript after a rewind or resume, folds the terminal band to one row, and on Desktop opens a Progress pane with an overview of every bar, details on demand and the finished ones kept as history",
+  "author": { "name": "Kirill Serditov", "url": "https://github.com/zycck" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
