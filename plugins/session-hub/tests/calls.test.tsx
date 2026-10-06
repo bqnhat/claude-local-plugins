@@ -34,14 +34,14 @@ const BREAKDOWN = {
   },
 }
 
-type World = { agentResult: unknown; opens: string[]; isPaneUp: boolean; clock: ReturnType<typeof mock.clock>; cwd: string }
+type World = { agentResult: unknown; opens: string[]; isPaneUp: boolean; clock: ReturnType<typeof mock.clock>; cwd: string; breakdown: unknown }
 
 function world(on: On, surfaces: RenderSurface[] = ['desktop']): World {
-  const w: World = { agentResult: undefined, opens: [], isPaneUp: false, clock: mock.clock(on), cwd: 'C:\\work\\app' }
+  const w: World = { agentResult: undefined, opens: [], isPaneUp: false, clock: mock.clock(on), cwd: 'C:\\work\\app', breakdown: BREAKDOWN }
   on('session.surfaces', async () => ({ value: surfaces }))
   on('session.messages', async () => ({ value: [] }))
   on('session.cwd', async () => ({ value: w.cwd }))
-  on('session.usage', async () => ({ value: { startedAt: 0, context: { window: 200000, breakdown: BREAKDOWN }, rateLimits: [] } as never }))
+  on('session.usage', async () => ({ value: { startedAt: 0, context: { window: 200000, breakdown: w.breakdown }, rateLimits: [] } as never }))
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('tool.register', async () => ({ value: undefined }))
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
@@ -271,6 +271,47 @@ describe('the Skills & agents section of Mod status', () => {
     expect(rows.map(box => box.props.marginLeft)).toEqual([0, 3])
   })
 
+  test('counts the calls nested under an agent in the header of the turn they show under', async ($, on) => {
+    const w = world(on)
+    await warmTurn($)
+    await startTurn($, 'verify', 't1')
+    w.agentResult = { status: 'completed', agentId: 'fg-1', resolvedModel: 'claude-opus-5-5', content: [], totalToolUseCount: 0, totalDurationMs: 1, totalTokens: 0, prompt: 'p' }
+    await $.tool.call({ tool: 'Agent', description: 'Check the claim', prompt: 'p', subagent_type: 'claim-verifier' })
+    await $.tool.call({ tool: 'Skill', skill: 'clarify', agentId: 'fg-1' } as never)
+    await $.tool.call({ tool: 'Skill', skill: 'eli5', agentId: 'fg-1' } as never)
+    await openCalls($)
+    const lines = (await paneText($)).split('\n')
+    expect(lines.filter(line => line === '2 skills · 1 agent').length).toBeGreaterThan(0)
+    expect(lines).not.toContain('1 agent')
+  })
+
+  test('keeps a namespaced plugin skill on its plugin when a personal skill shares its short name', async ($, on) => {
+    const w = world(on)
+    w.breakdown = {
+      ...BREAKDOWN,
+      skills: {
+        ...BREAKDOWN.skills,
+        skillFrontmatter: [
+          { name: 'debug', source: 'userSettings', tokens: 1 },
+          { name: 'debug', source: 'plugin', pluginName: 'engineering', tokens: 1 },
+        ],
+      },
+    }
+    await warmTurn($)
+    await startTurn($, 'go', 't1')
+    await $.tool.call({ tool: 'Skill', skill: 'debug' })
+    await openCalls($)
+    expect(await svgAlts($)).toContain('Personal')
+    expect(await svgAlts($)).not.toContain('Plugin · engineering')
+
+    await $.tool.call({ tool: 'Skill', skill: 'engineering:debug' })
+    await $.tool.call({ tool: 'Skill', skill: 'tools:debug' })
+    const alts = await svgAlts($)
+    expect(alts).toContain('Plugin · engineering')
+    expect(alts).toContain('Plugin · tools')
+    expect(alts.filter(alt => alt === 'Personal')).toHaveLength(2)
+  })
+
   test('counts the loaded rule and CLAUDE.md files by origin and lists them, rules first', async ($, on) => {
     world(on)
     await warmTurn($)
@@ -362,6 +403,7 @@ describe('the Skills & agents section of Mod status', () => {
     const text = await paneText($)
     expect(text).toContain('~/.claude/projects/…/memory/MEMORY.md')
     expect(text).not.toContain('C--Users-tester-work-app')
+    expect(await svgAlts($)).toContain('Personal 2 · Project 1 · Memory 1')
   })
 
   test('keeps the turn label of a rule file on one line beside a long path', async ($, on) => {

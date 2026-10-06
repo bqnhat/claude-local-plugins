@@ -2848,9 +2848,12 @@ function originOfAgent(source: string | undefined, provider: Origin | undefined,
 }
 
 function skillOrigin(map: SourceMap, name: string): CallOrigin {
-  const hit = map[name] ?? map[tail(name)]
+  const hit = map[name]
   if (hit) return hit
-  return name.includes(':') ? pluginOf(name) : { scope: 'unknown' }
+  if (!name.includes(':')) return { scope: 'unknown' }
+  const plugin = pluginOf(name)
+  const short = map[tail(name)]
+  return short?.scope === 'plugin' && short.plugin === plugin.plugin ? short : plugin
 }
 
 function agentOrigin(map: SourceMap, name: string): CallOrigin {
@@ -2981,9 +2984,11 @@ async function noteFile($: EngineInterface, path: string, scope: OriginScope, fi
   await update($, loadedFiles, list => (list.some(f => pathKey(f.path) === key) ? list : [...list, { path, scope, firstTurn }].slice(-MAX_FILES)))
 }
 
+const isAutoMemory = (path: string) => /\/\.claude\/projects\/[^/]+\/memory\//.test(pathKey(path))
+
 async function noteLoad($: EngineInterface, e: Args<'classic.InstructionsLoaded'>): Promise<void> {
   const key = pathKey(e.file_path)
-  const scope = scopeOfMemoryType(e.memory_type)
+  const scope = isAutoMemory(e.file_path) ? 'memory' : scopeOfMemoryType(e.memory_type)
   hasLoadEvents = true
   loadScopes.set(key, scope)
   if (e.agent_id) return
@@ -3107,7 +3112,7 @@ async function refreshSources($: EngineInterface): Promise<void> {
     const skills: SourceMap = {}
     for (const s of breakdown.skills?.skillFrontmatter ?? []) {
       const origin: CallOrigin = s.pluginName ? { scope: 'plugin', plugin: s.pluginName } : { scope: scopeOfSource(s.source) }
-      skills[s.name] = origin
+      if (!s.pluginName || s.name.includes(':') || skills[s.name] === undefined) skills[s.name] = origin
       if (s.pluginName && !s.name.includes(':')) skills[`${s.pluginName}:${s.name}`] = origin
     }
     await update($, skillSources, old => ({ ...old, ...skills }))
@@ -3490,10 +3495,11 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     const mark = marks.find(m => m.turn === turnNo)
     const at = mark ? ` · ${clockTime(mark.at)}` : ''
     const title = turnNo === 0 ? 'Earlier' : turnNo === currentTurn && isTurnLive ? `This turn${at}` : `Turn ${turnNo}${at}`
-    const skills = inTurn.filter(c => c.kind === 'skill').length
-    const agents = inTurn.filter(c => c.kind === 'agent').length
-    const counts = callCounts(skills, agents)
     const isQuiet = turnNo !== currentTurn
+    const before = shownCalls.length
+    const rows = inTurn.flatMap(c => walk(c, 0, isQuiet))
+    const inGroup = shownCalls.slice(before)
+    const counts = callCounts(inGroup.filter(c => c.kind === 'skill').length, inGroup.filter(c => c.kind === 'agent').length)
     return [
       heading(`calls-turn-${turnNo}`, title, i === 0 ? 0 : 1, counts ? [<Text key={`calls-turn-${turnNo}-count`} dimColor>{counts}</Text>] : []),
       ...(inTurn.length === 0
@@ -3502,7 +3508,7 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
               <Text dimColor>No skills or agents called yet.</Text>
             </Box>,
           ]
-        : inTurn.flatMap(c => walk(c, 0, isQuiet))),
+        : rows),
     ]
   })
 
