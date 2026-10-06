@@ -34,8 +34,37 @@ export type OfferRecord = { labels: string[]; picked: number | null }
 
 export type CacheTtl = '5m' | '1h'
 
-export type HubSection = 'progress' | 'next'
+export type CacheSample = { turn: number; turnId: string; at: number; read: number; write: number; fresh: number; model: string }
+export type CacheView = 'tokens' | 'savings'
+
+export type HubSection = 'progress' | 'next' | 'calls' | 'cache'
 export type HubPaneState = 'down' | 'up' | 'unplaced'
+
+export type CallKind = 'skill' | 'agent'
+export type CallStatus = 'running' | 'done' | 'failed'
+export type CallVia = 'model' | 'slash'
+export type OriginScope = 'personal' | 'project' | 'local' | 'managed' | 'plugin' | 'builtin' | 'mcp' | 'synced' | 'memory' | 'unknown'
+export type CallOrigin = { scope: OriginScope; plugin?: string }
+export type SourceMap = Record<string, CallOrigin>
+export type CallEntry = {
+  id: string
+  kind: CallKind
+  name: string
+  via: CallVia
+  turn: number
+  startedAt: number
+  endedAt?: number
+  status: CallStatus
+  origin: CallOrigin
+  description?: string
+  model?: string
+  isBackground?: boolean
+  isRemote?: boolean
+  loopId?: string
+  agentId?: string
+}
+export type CallTurn = { turn: number; at: number }
+export type LoadedFile = { path: string; scope: OriginScope; firstTurn: number }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -55,6 +84,21 @@ declare module 'claude-code' {
       lastResponseAt: number | null
       ttl: CacheTtl | null
       cacheLabel: string
+      cacheSamples: CacheSample[]
+      cacheView: CacheView
+      calls: CallEntry[]
+      callTurns: CallTurn[]
+      callTurn: number
+      isCallTurnRunning: boolean
+      loadedFiles: LoadedFile[]
+      skillSources: SourceMap
+      agentSources: SourceMap
+      callTick: number
+      isFilesShown: boolean
+      isCallHistoryOpen: boolean
     }
   }
 }
+
+export type LiveTime = { from: number; format: 'span' | 'short' | 'elapsed'; tail?: string }
+export type ShownTime = string | LiveTime

@@ -172,11 +172,11 @@ describe('the Progress pane on Desktop', () => {
     await $.tool.call({ tool: TOOL, id: 'first', next: true })
     expect(await rows($)).toEqual(['first', 'second'])
     expect(await texts($)).toContain('First task')
-    expect((await buttons($))['toggle-first']).toBe('\u00a0'.repeat(145))
+    expect((await buttons($))['toggle-first']).toBe('\u00a0'.repeat(185))
     const ui = await pane($)
     const hit = await ui.find({ type: 'Box', key: 'hit-first' })
     await ui.unmount()
-    expect(hit?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch' })
+    expect(hit?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch', overflow: 'hidden' })
     expect(await svgSource($, 'First task 50%')).toContain('stroke-dasharray')
     expect(await texts($)).toEqual(expect.arrayContaining(['Active · 2', 'Step 2/2 · Two', 'Step 1/2 · One']))
     expect(await texts($)).not.toEqual(expect.arrayContaining(['1/2']))
@@ -201,11 +201,29 @@ describe('the Progress pane on Desktop', () => {
     await press($, 'toggle-plan')
     expect(await svgSource($, 'Plan: 1/4 steps')).toContain('<svg')
     expect(await texts($)).toEqual(expect.arrayContaining(['Read', '1/1', 'Build', '0/2', 'Ship', '0/1', 'Code', 'Edit', 'Types', 'Test', 'Release', 'tests first']))
-    expect(await texts($)).toContain('⌄')
+    expect(await svgSource($, 'Fold')).toContain('M3 4.5 6 7.5 9 4.5')
+    expect((await texts($)).filter(one => one.startsWith('Started '))).toHaveLength(1)
+    expect((await texts($)).some(one => one.includes('→'))).toBe(false)
 
     await press($, 'toggle-plan')
+    expect(await svgSource($, 'Open')).toContain('M4.5 3 7.5 6 4.5 9')
     expect(await svgSource($, 'Plan: ')).toBeUndefined()
     expect(await texts($)).not.toContain('Release')
+  })
+
+  test('a press on the chevron opens and folds the bar as a press on its title does', async ($, on) => {
+    world(on)
+    await create($, 'plan')
+    expect((await buttons($))['chevron-plan']).toBe(' '.repeat(4))
+    expect(await svgSource($, 'Open')).toContain('M4.5 3 7.5 6 4.5 9')
+
+    await press($, 'chevron-plan')
+    expect(await svgSource($, 'Fold')).toContain('M3 4.5 6 7.5 9 4.5')
+    expect(await texts($)).toContain('Two')
+
+    await press($, 'chevron-plan')
+    expect(await svgSource($, 'Open')).toContain('M4.5 3 7.5 6 4.5 9')
+    expect(await texts($)).not.toContain('Two')
   })
 
   test('the stepped bar colours each step by its state and leaves a wider gap between stages', async ($, on) => {
@@ -226,10 +244,22 @@ describe('the Progress pane on Desktop', () => {
     expect(source).toContain('fill="#30A46C" fill-opacity="1"')
     expect(source).toContain('fill="#8B7CF6" fill-opacity="1"')
     expect(source).toContain('fill="#8A8984" fill-opacity="0.3"')
-    expect(source).toContain('width="322"')
-    expect(source).toContain('<rect x="111.3"')
-    expect(source).toContain('<rect x="217.7"')
-    expect(await svgSource($, 'Plan: ', { bodyColumns: 400 })).toContain('width="1400"')
+    expect(source).toContain('viewBox="0 0 1400 4" preserveAspectRatio="none"')
+    expect(source).toContain('<rect x="470.7"')
+    expect(source).toContain('<rect x="936.3"')
+    expect(await svgSource($, 'Plan: ', { bodyColumns: 20 })).toBe(source)
+  })
+
+  test('the stepped bar takes the whole width of the details, whatever the pane width', async ($, on) => {
+    world(on)
+    await create($, 'plan')
+    await press($, 'toggle-plan')
+    const ui = await pane($)
+    const bar = (await ui.findAll({ type: 'Svg' })).find(one => String(one.props.alt).startsWith('plan: '))
+    await ui.unmount()
+
+    expect(bar?.props.width).toBeUndefined()
+    expect(bar?.props.height).toBe(4)
   })
 
   test('a bar waiting on the person says what it waits on, in its row and with a question mark in its ring', async ($, on) => {
@@ -239,6 +269,59 @@ describe('the Progress pane on Desktop', () => {
 
     expect(await texts($)).toContain('Waiting on you · Pick a name')
     expect(await svgSource($, 'task 0%')).toContain('M9.09 9a3')
+  })
+
+  test('state done finishes every step still open, substeps too, and stops their clocks', async ($, on) => {
+    const { clock } = world(on)
+    await $.tool.call({
+      tool: TOOL,
+      id: 'job',
+      title: 'Job',
+      stages: [
+        { name: 'Build', steps: [{ title: 'One', status: 'done' }, { title: 'Two', status: 'active', substeps: [{ title: 'Half', status: 'pending' }] }] },
+        { name: 'Check', steps: [{ title: 'Three', status: 'pending' }] },
+      ],
+    })
+    await clock.advance(4000)
+    await finish($, 'job')
+    await press($, 'toggle-job')
+    await clock.advance(5000)
+    const all = await texts($)
+    expect(all.filter(text => /^\d+\/\d+/.test(text)).map(text => text.split(' ')[0])).toEqual(['2/2', '1/1'])
+    expect(all.filter(text => text === '●' || text === '○')).toEqual([])
+    expect(all.some(text => text.endsWith('…'))).toBe(false)
+  })
+
+  test('state done after a failed step or a wait leaves no step failed, waiting or pending', async ($, on) => {
+    world(on)
+    const stages = [
+      { name: 'Build', steps: [{ title: 'Install', status: 'done' }, { title: 'Compile', status: 'active' }] },
+      { name: 'Test', steps: [{ title: 'Run', status: 'pending' }] },
+    ]
+    await $.tool.call({ tool: TOOL, id: 'broke', title: 'Broke', stages })
+    await $.tool.call({ tool: TOOL, id: 'broke', failed: 'Compile', note: 'build failed' })
+    await $.tool.call({ tool: TOOL, id: 'ask', title: 'Ask', stages })
+    await $.tool.call({ tool: TOOL, id: 'ask', state: 'needs_input', note: 'pick a name' })
+    for (const id of ['broke', 'ask']) {
+      await finish($, id)
+      await press($, `toggle-${id}`)
+      const all = await texts($)
+      expect(all.filter(text => /^\d+\/\d+/.test(text)).map(text => text.split(' ')[0])).toEqual(['2/2', '1/1'])
+      expect(all.filter(text => ['●', '○', '!'].includes(text))).toEqual([])
+      await press($, `toggle-${id}`)
+    }
+  })
+
+  test('every step mark sits in one fixed column, so a failed step lines up with the done ones', async ($, on) => {
+    world(on)
+    await $.tool.call({ tool: TOOL, id: 'job', title: 'Job', stages: [{ name: 'Build', steps: [{ title: 'One', status: 'done' }, { title: 'Two', status: 'active' }, { title: 'Three', status: 'pending' }] }] })
+    await $.tool.call({ tool: TOOL, id: 'job', failed: 'Two', note: 'broke' })
+    await press($, 'toggle-job')
+    const ui = await pane($)
+    const marks = (await ui.findAll({ type: 'Box' })).filter(box => (box.key ?? '').endsWith('-mark'))
+    await ui.unmount()
+    expect(marks.map(flat)).toEqual(['✓', '!', '○'])
+    expect(marks.map(box => box.props.width)).toEqual([1, 1, 1])
   })
 
   test('a row counts the agents at work, and its details list each agent with its tool and time', async ($, on) => {
@@ -561,7 +644,7 @@ describe('when the Progress pane opens and closes', () => {
     await $.command.run({ command: 'progress-clear', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
 
     expect([...w.panes]).toEqual([PANE])
-    expect(await texts($)).toContain('No progress bars.')
+    expect(await texts($)).toContain('No progress bars yet. One appears when Claude starts a task with several steps.')
   })
 
   test('a session start opens the pane again when it went away, as after a reload', async ($, on) => {

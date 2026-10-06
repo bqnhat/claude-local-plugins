@@ -121,6 +121,57 @@ describe('time on each step', () => {
     expect(await stepLine($, 'step-bar-0-0')).toBe('●|First|15s…')
   })
 
+  test('next:true finishes the substeps of the step it closes, at the time the step ends', async ($, on) => {
+    const clock = world(on)
+    const parts = { ...BAR, stages: [{ name: 'Read', steps: [{ title: 'First', status: 'active', substeps: [{ title: 'Part', status: 'active' }, { title: 'Tail', status: 'pending' }] }, { title: 'Second', status: 'pending' }] }] }
+    await $.tool.call({ tool: TOOL, ...parts })
+    await clock.advance(30_000)
+    await $.tool.call({ tool: TOOL, id: 'bar', next: true })
+    await clock.advance(60_000)
+
+    expect(await stepLine($, 'step-bar-0-0')).toBe('✓|First|30s')
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('✓|Part|30s')
+    expect(await stepLine($, 'sub-bar-0-0-1')).toBe('✓|Tail')
+  })
+
+  test('done and a later active finish the substeps of the steps they close', async ($, on) => {
+    const clock = world(on)
+    const parts = {
+      ...BAR,
+      stages: [
+        {
+          name: 'Read',
+          steps: [
+            { title: 'First', status: 'active', substeps: [{ title: 'Part', status: 'pending' }] },
+            { title: 'Second', status: 'pending', substeps: [{ title: 'Bit', status: 'pending' }] },
+            { title: 'Third', status: 'pending' },
+          ],
+        },
+      ],
+    }
+    await $.tool.call({ tool: TOOL, ...parts })
+    await clock.advance(10_000)
+    await $.tool.call({ tool: TOOL, id: 'bar', active: 'Second' })
+    await clock.advance(10_000)
+    await $.tool.call({ tool: TOOL, id: 'bar', done: ['Second'], active: 'Third' })
+
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('✓|Part|10s')
+    expect(await stepLine($, 'sub-bar-0-1-0')).toBe('✓|Bit|10s')
+  })
+
+  test('a substep closed after its step never shows more time than the step', async ($, on) => {
+    const clock = world(on)
+    const open = { ...BAR, stages: [{ name: 'Read', steps: [{ title: 'First', status: 'active', substeps: [{ title: 'Part', status: 'pending' }] }, { title: 'Second', status: 'pending' }] }] }
+    await $.tool.call({ tool: TOOL, ...open })
+    await clock.advance(24_000)
+    await $.tool.call({ tool: TOOL, id: 'bar', stages: [{ name: 'Read', steps: [{ title: 'First', status: 'done', substeps: [{ title: 'Part', status: 'pending' }] }, { title: 'Second', status: 'active' }] }] })
+    await clock.advance(240_000)
+    await $.tool.call({ tool: TOOL, id: 'bar', state: 'done' })
+
+    expect(await stepLine($, 'step-bar-0-0')).toBe('✓|First|24s')
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('✓|Part|24s')
+  })
+
   test('a step sent back to pending loses its times', async ($, on) => {
     const clock = world(on)
     await $.tool.call({ tool: TOOL, ...BAR })

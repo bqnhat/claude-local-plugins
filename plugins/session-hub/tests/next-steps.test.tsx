@@ -341,7 +341,7 @@ describe('desktop renderer', () => {
     const w = world(on)
     await completeTurn($, w)
     const ui = await pane($)
-    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress', 'Next steps'])
+    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress', 'Next steps', 'Skills & agents', 'Cache'])
     await ui.press({ key: 'rail-progress' })
     await ui.unmount()
 
@@ -373,10 +373,10 @@ describe('desktop renderer', () => {
 
     const buttons = await stepButtons(ui)
     expect(buttons.map(b => b.key)).toEqual(['next-step-1', 'next-step-2', 'next-step-3'])
-    expect(buttons.every(b => b.props.hotkey === undefined && b.props.label === ' '.repeat(101))).toBe(true)
+    expect(buttons.every(b => b.props.hotkey === undefined && b.props.label === ' '.repeat(129))).toBe(true)
     expect((await ui.find({ type: 'Box', key: 'next-step-row-1' }))?.props).toMatchObject({ borderStyle: 'round', position: 'relative' })
     expect(await labels(ui)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
-    expect((await ui.find({ type: 'Box', key: 'next-step-hit-2' }))?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch' })
+    expect((await ui.find({ type: 'Box', key: 'next-step-hit-2' }))?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch', overflow: 'hidden' })
     expect((await rowTexts(ui)).filter((_, i) => i % 2 === 1).map(t => [t.text, t.props.wrap])).toEqual([
       ['Why: Run the tests', 'wrap'],
       ['Why: Review it', 'wrap'],
@@ -774,5 +774,98 @@ describe('critic', () => {
 
     expect(w.criticCalls).toEqual([])
     expect(await paneLabels($)).toEqual(['✓ Only one'])
+  })
+})
+
+const CLAIMED_RESTART =
+  'Tôi đã khởi động lại với session-hub local.20. Chạy /progress-demo, mở pane Mod status, chụp mục Progress lúc đóng và lúc mở chi tiết, so với ảnh local.15 tôi gửi, rồi liệt kê chỗ đã ổn và chỗ còn lệch.'
+const CLAIMED_PANE =
+  'Tôi đã mở phiên Plugin plan-progress thiết kế, pane Mod status ở mục Progress và đã mở chi tiết Demo đã xong. Chụp đi, so với ảnh local.15 tôi gửi, liệt kê chỗ đã ổn và chỗ còn lệch.'
+const CLAIMED_INSTALL = "I've installed session-hub local.21 and reloaded the session. Run /progress-demo and compare the Progress section with the local.15 screenshot."
+const CHECKED_FIRST =
+  'Trước tiên kiểm tra phiên này đang chạy session-hub bản nào; nếu chưa phải local.20 thì dừng và báo tôi. Nếu đúng, chạy /progress-demo và chụp mục Progress lúc đóng và lúc mở chi tiết.'
+const CHECKED_EN = 'Check which session-hub version this session has loaded; if it is not local.21, stop and tell me.'
+
+async function reloadOnto($: Engine, on: On, prompt: string) {
+  const older = { kind: 'offer', goal: '', items: [{ kind: 'verify', label: 'Chụp lại mục Progress', why: 'Biết Progress đã khớp ảnh chưa', prompt }] }
+  const w = world(on, forkReply([]))
+  on('state.set', async (_$, e, next) => next(e.plugin === PLUGIN && e.key === 'view' ? { ...e, value: older } : e))
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  on('session.messages', async () => ({ value: [] }))
+  on('tool.register', async () => ({ value: undefined }))
+  on('command.register', async () => ({ value: undefined }))
+  await completeTurn($, w)
+  await $.session.start({ cwd: 'C:/repo', surface: 'desktop', isInteractive: true })
+}
+
+describe('steps only the user can take outside the chat', () => {
+  test('a prompt that says the user already restarted, opened or installed something is dropped before the critic, the cards and the ghost text', async ($, on) => {
+    const w = world(
+      on,
+      forkReply([
+        entry('Chụp lại mục Progress', CLAIMED_RESTART, 'verify'),
+        entry('So chi tiết Demo', CLAIMED_PANE, 'dig'),
+        entry('Compare after reinstall', CLAIMED_INSTALL, 'advance'),
+        entry('Kiểm tra bản đang chạy', CHECKED_FIRST, 'verify', 'Khởi động lại phiên với local.20 trước khi gửi'),
+        entry('Check the loaded version', CHECKED_EN, 'dig'),
+      ]),
+    )
+    await completeTurn($, w)
+
+    expect(w.criticCalls).toHaveLength(1)
+    expect(w.criticCalls[0]?.prompt).toContain(CHECKED_FIRST)
+    expect(w.criticCalls[0]?.prompt).not.toContain('Tôi đã')
+    expect(w.criticCalls[0]?.prompt).not.toContain("I've installed")
+    const ui = await pane($)
+    expect(await labels(ui)).toEqual(['✓ Kiểm tra bản đang chạy', '🔍 Check the loaded version'])
+    expect(await whys(ui)).toEqual(['Khởi động lại phiên với local.20 trước khi gửi', 'Why: Check the loaded version'])
+    expect(w.suggested).toEqual([CHECKED_FIRST])
+    await ui.press({ key: 'next-step-1' })
+    await ui.press({ key: 'next-step-2' })
+    expect(w.filled.map(fill => fill.text)).toEqual([CHECKED_FIRST, CHECKED_EN])
+  })
+
+  test('with the critic off, a lone prompt that claims a restart leaves no list and no ghost text', { options: { critic: 'off' } }, async ($, on) => {
+    const w = world(on, forkReply([entry('Chụp lại mục Progress', CLAIMED_RESTART)]))
+    await completeTurn($, w)
+
+    expect(await chipLabel($)).toBe('Mods')
+    expect(w.suggested).toEqual([])
+  })
+
+  test('the fork is told never to claim such a step, and to name it in why and check it first instead', async ($, on) => {
+    const w = world(on)
+    await completeTurn($, w)
+
+    expect(w.forkPrompts[0]).toContain('it must never claim they already did something only they can do outside this chat')
+    expect(w.forkPrompts[0]).toContain('start why with it as the step to take before sending')
+    expect(w.forkPrompts[0]).toContain('have the prompt first check it')
+  })
+
+  test('the critic is told to score 1 a prompt that claims such a step, and a paraphrase it scores 1 is not shown', async ($, on) => {
+    const paraphrase = 'Phiên này đang chạy session-hub local.20 rồi, chạy /progress-demo và chụp mục Progress lúc đóng và lúc mở chi tiết.'
+    const ranking = JSON.stringify([
+      { index: 0, score: 1 },
+      { index: 1, score: 4 },
+    ])
+    const w = world(on, forkReply([entry('Chụp mục Progress', paraphrase, 'verify'), entry('Check the loaded version', CHECKED_EN, 'dig')]), undefined, ranking)
+    await completeTurn($, w)
+
+    expect(w.criticCalls[0]?.system).toContain('scores 1 whatever its other merits')
+    expect(w.criticCalls[0]?.prompt).toContain(paraphrase)
+    expect(await paneLabels($)).toEqual(['🔍 Check the loaded version'])
+    expect(w.logged).toContain('critic opus kept 1 of 2')
+  })
+
+  test('after a reload, a list saved by an older build is not brought back when one of its prompts claims such a step', async ($, on) => {
+    await reloadOnto($, on, CLAIMED_RESTART)
+
+    expect(await chipLabel($)).toBe('Mods')
+  })
+
+  test('after a reload, a saved list whose prompts claim no such step is brought back', async ($, on) => {
+    await reloadOnto($, on, CHECKED_FIRST)
+
+    expect(await chipLabel($)).toBe('💡 1')
   })
 })
