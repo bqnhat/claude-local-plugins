@@ -144,6 +144,7 @@ const ROW_FILL_PER_COLUMN = 3.5
 
 const STATE_COLOR: Record<PlanState, string> = { running: '#8B7CF6', needs_input: '#E09A1E', error: '#E5484D', done: '#30A46C' }
 const STATE_GLYPH: Record<PlanState, string> = { running: '●', needs_input: '?', error: '!', done: '✓' }
+const STATE_WORD: Record<PlanState, string> = { running: 'running', needs_input: 'waiting on you', error: 'failed', done: 'done' }
 const STATUSES: StepStatus[] = ['pending', 'active', 'done', 'error', 'skipped']
 
 const RULES = `# Progress bars
@@ -1182,7 +1183,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const isAlert = p.state === 'needs_input' || p.state === 'error'
     const toggle = () => toggleBubble($, p.id)
     const took = shortSpan(endOf(p, now) - p.startedAt)
-    const mark = isCompact || !Svg ? <Text color={color}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planRingSvg(p, pct)} alt={`${p.title} ${pct}%`} width={PLAN_RING} height={PLAN_RING} />
+    const mark = isCompact || !Svg ? <Text color={color}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planRingSvg(p, pct)} alt={`${p.title} ${pct}% · ${STATE_WORD[p.state]}`} width={PLAN_RING} height={PLAN_RING} />
     const right = isCompact ? clockTime(touchedAt(p)) : took
     const line = isAlert ? (
       <Text key={`line-${p.id}`} color={color} wrap="truncate">
@@ -2486,14 +2487,18 @@ const SECTIONS: { id: HubSection; title: string; path: string }[] = [
   { id: 'cache', title: 'Cache', path: '<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13"/><path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/>' },
 ]
 
-type Badge = string | null
+type Badge = { color: string; word: string } | null
 type SectionInfo = { meta: string; badge: Badge }
+
+function railAlt(title: string, isActive: boolean, badge: Badge): string {
+  return [title, isActive ? 'selected' : '', badge?.word ?? ''].filter(part => part !== '').join(' · ')
+}
 
 function railCellSvg(path: string, isActive: boolean, badge: Badge): string {
   const at = { x: (RAIL_W - ICON) / 2, y: (RAIL_CELL_H - ICON) / 2 }
   const scale = ICON / 24
   const bar = isActive ? `<rect x="0" y="6" width="2" height="${RAIL_CELL_H - 12}" rx="1" fill="${ACCENT}"/>` : ''
-  const dot = badge === null ? '' : `<circle cx="${at.x + ICON + 1}" cy="${at.y + 1}" r="3" fill="${badge}"/>`
+  const dot = badge === null ? '' : `<circle cx="${at.x + ICON + 1}" cy="${at.y + 1}" r="3" fill="${badge.color}"/>`
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${RAIL_W}" height="${RAIL_CELL_H}" viewBox="0 0 ${RAIL_W} ${RAIL_CELL_H}">${bar}<g transform="translate(${at.x} ${at.y}) scale(${scale})" fill="none" stroke="${isActive ? ACCENT : MUTED}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</g>${dot}</svg>`
 }
 
@@ -2509,12 +2514,12 @@ async function sectionInfo($: EngineInterface, id: HubSection, current: HubSecti
     const isFailed = live.some(p => p.state === 'error')
     const done = all.filter(p => p.state === 'done' && !p.hidden).length
     const meta = live.length > 0 ? `${live.length} active` : done > 0 ? `${done} done` : ''
-    return { meta, badge: isFailed ? EXPIRED_COLOR : isAlert ? ALERT : null }
+    return { meta, badge: isFailed ? { color: EXPIRED_COLOR, word: 'failed' } : isAlert ? { color: ALERT, word: 'waiting on you' } : null }
   }
   const view = currentView()
   const count = view.kind === 'offer' ? view.items.length : 0
   const meta = view.kind === 'loading' ? 'thinking…' : count > 0 ? String(count) : ''
-  return { meta, badge: count > 0 && current !== 'next' ? ACCENT : null }
+  return { meta, badge: count > 0 && current !== 'next' ? { color: ACCENT, word: plural(count, 'new suggestion') } : null }
 }
 
 async function drawSection($: EngineInterface, id: HubSection, e: RenderInputOf<'Pane'>): Promise<RenderElement> {
@@ -3191,11 +3196,11 @@ function registerCalls(on: On): void {
   })
 }
 
-async function callsInfo($: EngineInterface, isCurrent: boolean): Promise<{ meta: string; badge: string | null }> {
+async function callsInfo($: EngineInterface, isCurrent: boolean): Promise<SectionInfo> {
   const count = countCalls(await read($, calls))
   if (count.skills + count.agents === 0) return { meta: '', badge: null }
   const meta = count.running > 0 ? `${count.running} running` : `${plural(count.skills, 'skill')} · ${plural(count.agents, 'agent')}`
-  const badge = count.failed > 0 && !isCurrent ? FAILED_COLOR : count.running > 0 && !isCurrent ? RUNNING_COLOR : null
+  const badge = count.failed > 0 && !isCurrent ? { color: FAILED_COLOR, word: `${count.failed} failed` } : count.running > 0 && !isCurrent ? { color: RUNNING_COLOR, word: `${count.running} running` } : null
   return { meta, badge }
 }
 
@@ -3503,7 +3508,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
       <Box key="hub-rail" flexDirection="column" paddingY={1}>
         {sections.map((s, i) => (
           <Box key={`rail-cell-${s.id}`} position="relative" flexDirection="row" justifyContent="center" minWidth={RAIL_COLUMNS} flexShrink={0}>
-            <Svg source={railCellSvg(s.path, s.id === current, infos[i]?.badge ?? null)} alt={s.title} width={RAIL_W} height={RAIL_CELL_H} />
+            <Svg source={railCellSvg(s.path, s.id === current, infos[i]?.badge ?? null)} alt={railAlt(s.title, s.id === current, infos[i]?.badge ?? null)}width={RAIL_W} height={RAIL_CELL_H} />
             <Box key={`rail-hit-${s.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
               <Button key={`rail-${s.id}`} plain label={RAIL_FILL} onPress={() => pickSection($, s.id)} />
             </Box>

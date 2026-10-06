@@ -132,7 +132,7 @@ describe('the Skills & agents section of Mod status', () => {
   test('sits on the rail after Next steps and starts with a hint', async ($, on) => {
     world(on)
     const ui = await mountPane($)
-    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress', 'Next steps', 'Skills & agents', 'Cache'])
+    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress · selected', 'Next steps', 'Skills & agents', 'Cache'])
     await ui.press({ key: 'rail-calls' })
     await ui.unmount()
     const text = await paneText($)
@@ -232,6 +232,12 @@ describe('the Skills & agents section of Mod status', () => {
     expect(text).toContain('Built-in')
     expect(text).toContain('Find the component')
     expect(await svgAlts($)).toContain('agent running')
+    expect(await svgAlts($)).toContain('Skills & agents · selected')
+    const away = await mountPane($)
+    await away.press({ key: 'rail-progress' })
+    await away.unmount()
+    expect(await svgAlts($)).toContain('Skills & agents · 1 running')
+    await openCalls($)
 
     const chip = await footer($)
     expect(String((await chip.find({ type: 'Button', key: 'hub-toggle' }))?.props.label)).toContain('Agents 1')

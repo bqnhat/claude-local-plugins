@@ -183,6 +183,27 @@ describe('the Progress pane on Desktop', () => {
     expect(await svgSource($, 'First task: ')).toBeUndefined()
   })
 
+  test('the ring and the rail icon say in words what their colour shows', async ($, on) => {
+    world(on)
+    await create($, 'task', 'Task')
+    const alts = async () => {
+      const ui = await pane($)
+      const all = (await ui.findAll({ type: 'Svg' })).map(svg => String(svg.props.alt))
+      await ui.unmount()
+      return all
+    }
+    expect(await alts()).toEqual(expect.arrayContaining(['Task 0% · running', 'Progress · selected']))
+
+    await $.tool.call({ tool: TOOL, id: 'task', state: 'needs_input', note: 'Pick a name' })
+    expect(await alts()).toEqual(expect.arrayContaining(['Task 0% · waiting on you', 'Progress · selected · waiting on you']))
+
+    await $.tool.call({ tool: TOOL, id: 'task', state: 'error', note: 'Broke' })
+    expect(await alts()).toEqual(expect.arrayContaining(['Task 0% · failed', 'Progress · selected · failed']))
+
+    await finish($, 'task')
+    expect(await alts()).toEqual(expect.arrayContaining(['Task 100% · done', 'Progress · selected']))
+  })
+
   test('pressing a title opens its details in place, and pressing it again folds them', async ($, on) => {
     world(on)
     await $.tool.call({

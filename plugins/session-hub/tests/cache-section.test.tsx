@@ -94,7 +94,7 @@ describe('the Cache section of Mod status', () => {
   test('sits last on the rail and says so before the first request', async ($, on) => {
     world(on)
     const ui = await mountPane($)
-    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress', 'Next steps', 'Skills & agents', 'Cache'])
+    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress · selected', 'Next steps', 'Skills & agents', 'Cache'])
     await ui.press({ key: 'rail-cache' })
     await ui.unmount()
 
