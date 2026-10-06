@@ -2356,12 +2356,14 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
         <Box flexGrow={1} minWidth={0}>
           <Text dimColor wrap="truncate">{`Last request · ${two(at.getHours())}:${two(at.getMinutes())}`}</Text>
         </Box>
+        <Text bold color={hitColor(hitOf(last))}>{`${hitOf(last)}%`}</Text>
+      </Box>
+      <Box key="cache-last-parts" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} minWidth={0}>
         <Text color={READ_COLOR}>{`read ${tokens(last.read)}`}</Text>
         <Text dimColor>·</Text>
         <Text color={WRITE_COLOR}>{`wrote ${tokens(last.write)}`}</Text>
         <Text dimColor>·</Text>
         <Text color={FRESH_COLOR}>{`new ${tokens(last.fresh)}`}</Text>
-        <Text bold color={hitColor(hitOf(last))}>{`${hitOf(last)}%`}</Text>
       </Box>
       <Svg source={lastBarSvg(last, rowWidth)} alt={`read ${tokens(last.read)}, wrote ${tokens(last.write)}, new ${tokens(last.fresh)}`} width={rowWidth} height={4} />
     </Box>
