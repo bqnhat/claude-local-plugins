@@ -166,6 +166,20 @@ describe('the Cache section of Mod status', () => {
     for (const box of turnCells) expect(box.props.flexShrink).toBe(0)
   })
 
+  test('the head keeps the cache time whole and lets the view tabs drop below it in a narrow pane', async ($, on) => {
+    const w = world(on)
+    await press($, 'rail-cache')
+    await request($, w, 't1', { read: 1000, write: 0, fresh: 0 })
+
+    const ui = await mountPane($)
+    const head = await ui.find({ type: 'Box', key: 'cache-head' })
+    const ttl = await ui.find({ type: 'Box', key: 'cache-head-ttl' })
+    await ui.unmount()
+    expect(head?.props.flexWrap).toBe('wrap')
+    expect(ttl?.props.flexShrink).toBe(0)
+    expect((await texts($)).some(line => / cache( · |$)/.test(line) && line.includes('turn'))).toBe(false)
+  })
+
   test('Savings switches the view, works out what the cache saved, and the choice stays', async ($, on) => {
     const w = world(on)
     await press($, 'rail-cache')

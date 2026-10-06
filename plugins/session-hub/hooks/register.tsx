@@ -2342,9 +2342,9 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   )
 
   const head = (
-    <Box key="cache-head" flexDirection="row" alignItems="center" gap={2} paddingX={1} minWidth={0}>
-      <Box flexGrow={1} minWidth={0}>
-        <Text dimColor wrap="truncate">{`${ttlName} cache${left} · ${plural(turns.length, 'turn')}`}</Text>
+    <Box key="cache-head" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={2} paddingX={1} minWidth={0}>
+      <Box key="cache-head-ttl" flexGrow={1} flexShrink={0}>
+        <Text dimColor>{`${ttlName} cache${left}`}</Text>
       </Box>
       <Button key="cache-view-tokens" plain dimColor={view !== 'tokens'} label="Tokens" onPress={() => pick('tokens')} />
       <Button key="cache-view-savings" plain dimColor={view !== 'savings'} label="Savings" onPress={() => pick('savings')} />
