@@ -327,6 +327,33 @@ describe('desktop renderer', () => {
     expect((await ui.find({ type: 'Button', key: 'hub-toggle' }))?.props.label).toBe('Mods')
   })
 
+  test('/clear drops the suggestions of the conversation it leaves, from the footer and the Next steps section', async ($, on) => {
+    on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
+    const w = world(on)
+    await completeTurn($, w)
+    expect(await chipLabel($)).toBe('💡 3')
+
+    await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } } as never)
+    expect(await chipLabel($)).toBe('Mods')
+    expect(await header($)).not.toContain('3 suggestions')
+  })
+
+  test('/resume drops suggestions still being made for the conversation it leaves', async ($, on) => {
+    on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
+    let release: () => void = () => undefined
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const w = world(on, SUGGESTIONS, held)
+    await completeTurn($, w)
+
+    await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-2' } } as never)
+    release()
+    await w.clock.settle()
+    expect(await chipLabel($)).toBe('Mods')
+    expect(w.suggested).toEqual([])
+  })
+
   test('the entry is a plain footer label, like the labels beside it', async ($, on) => {
     const w = world(on)
     await completeTurn($, w)

@@ -627,6 +627,20 @@ describe('when the Progress pane opens and closes', () => {
     expect([...w.panes]).toEqual([])
   })
 
+  test('the first agent opens a pane closed on another section on Progress, where its bar is', async ($, on) => {
+    const w = world(on)
+    const session = () => $.command.run({ command: 'session', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
+    await session()
+    await press($, 'rail-next')
+    await session()
+    expect([...w.panes]).toEqual([])
+
+    await spawn($, 'use-1', 'Scout')
+    expect([...w.panes]).toEqual([PANE])
+    expect((await texts($))[0]).toBe('Progress')
+    expect(await rows($)).toEqual(['agents:auto'])
+  })
+
   test('Progress opens the pane again when it went away while the bars were showing', async ($, on) => {
     const w = world(on)
     await create($, 'task')

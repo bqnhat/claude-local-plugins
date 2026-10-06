@@ -1048,7 +1048,10 @@ function registerProgress(on: On): void {
       const auto: Plan = { id: AGENTS, title: 'Agents', kind: 'todo', stages: [], state: 'running', note: null, startedAt: now }
       return placeBar(list, addRun(auto, run, undefined, now))
     })
-    if (isNew) await update($, isOpen, () => true)
+    if (isNew) {
+      await update($, isOpen, () => true)
+      await showSection($, 'progress')
+    }
     await syncPane($)
 
     return started
@@ -1994,6 +1997,11 @@ async function nextStepsTurnStart($: EngineInterface, sent: string): Promise<voi
     const record: OfferRecord = { labels: shown.items.map(item => item.label), picked: pickedIndex(shown.items, sent) }
     await update($, history, records => [...records, record].slice(-HISTORY_MAX)).catch(() => undefined)
   }
+  filledPrompt = null
+  if (view.kind !== 'hidden') show($, { kind: 'hidden' })
+}
+
+function nextStepsSessionEnd($: EngineInterface): void {
   filledPrompt = null
   if (view.kind !== 'hidden') show($, { kind: 'hidden' })
 }
@@ -3163,6 +3171,7 @@ function registerCalls(on: On): void {
   on('session.end', { reason: ['clear', 'resume'] }, async ($, e, next) => {
     await forgetSession($).catch(() => undefined)
     await forgetSamples($).catch(() => undefined)
+    nextStepsSessionEnd($)
     return next(e)
   })
 
