@@ -340,7 +340,7 @@ describe('desktop renderer', () => {
     await completeTurn($, w)
 
     expect(w.opened).toEqual([{ id: 'session-hub', title: 'Mod status' }])
-    expect(await header($)).toEqual(['Next steps', '3'])
+    expect(await header($)).toEqual(['Next steps', '3 suggestions'])
   })
 
   test('the footer entry closes the pane and opens it again', async ($, on) => {

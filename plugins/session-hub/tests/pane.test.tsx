@@ -183,6 +183,15 @@ describe('the Progress pane on Desktop', () => {
     expect(await svgSource($, 'First task: ')).toBeUndefined()
   })
 
+  test('the rail dot of a failed bar is the same red as its ring', async ($, on) => {
+    world(on)
+    await create($, 'task', 'Task')
+    await $.tool.call({ tool: TOOL, id: 'task', state: 'error', note: 'Broke' })
+
+    expect(await svgSource($, 'Task 0%')).toContain('stroke="#E5484D"')
+    expect(await svgSource($, 'Progress ·')).toContain('fill="#E5484D"')
+  })
+
   test('the ring and the rail icon say in words what their colour shows', async ($, on) => {
     world(on)
     await create($, 'task', 'Task')

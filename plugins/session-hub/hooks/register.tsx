@@ -137,12 +137,16 @@ const STAGE_GAP = 5
 const DETAIL_INDENT = 5
 const CHEVRON = 12
 const CHEVRON_FILL = ' '.repeat(4)
+const GREEN = '#30A46C'
+const ORANGE = '#E09A1E'
+const PURPLE = '#8B7CF6'
+const RED = '#E5484D'
 const QUIET = '#8A8984'
 const HOVER_BG = '#8080801f'
 const ROW_FILL_CHAR = ' '
 const ROW_FILL_PER_COLUMN = 3.5
 
-const STATE_COLOR: Record<PlanState, string> = { running: '#8B7CF6', needs_input: '#E09A1E', error: '#E5484D', done: '#30A46C' }
+const STATE_COLOR: Record<PlanState, string> = { running: PURPLE, needs_input: ORANGE, error: RED, done: GREEN }
 const STATE_GLYPH: Record<PlanState, string> = { running: '●', needs_input: '?', error: '!', done: '✓' }
 const STATE_WORD: Record<PlanState, string> = { running: 'running', needs_input: 'waiting on you', error: 'failed', done: 'done' }
 const STATUSES: StepStatus[] = ['pending', 'active', 'done', 'error', 'skipped']
@@ -2060,8 +2064,8 @@ async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): P
 }
 
 const TTL_MS: Record<CacheTtl, number> = { '5m': 5 * 60_000, '1h': 60 * 60_000 }
-const WARN_COLOR = '#D97706'
-const EXPIRED_COLOR = '#DC2626'
+const WARN_COLOR = ORANGE
+const EXPIRED_COLOR = RED
 const STORE_KEY = 'ttl'
 const MARGIN_MS = 30_000
 
@@ -2149,11 +2153,11 @@ const CACHE_DOT = '●'
 const MAX_SAMPLES = 2000
 const CHART_TURNS = 12
 const CHART_H = 150
-const READ_COLOR = '#30A46C'
-const WRITE_COLOR = '#E09A1E'
-const FRESH_COLOR = '#8B7CF6'
-const LOW_COLOR = '#E5484D'
-const AXIS_COLOR = '#8A8984'
+const READ_COLOR = GREEN
+const WRITE_COLOR = ORANGE
+const FRESH_COLOR = PURPLE
+const LOW_COLOR = RED
+const AXIS_COLOR = QUIET
 const READ_SAVING = 0.9
 const READ_SAVING_BY_MODEL: readonly (readonly [string, number])[] = [['claude-opus-5-5', 0.95]]
 const WRITE_EXTRA: Record<CacheTtl, number> = { '5m': 0.25, '1h': 1 }
@@ -2344,7 +2348,6 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const last = samples[samples.length - 1]
   const ttlName = c === null ? '' : c.ttlMs % 3_600_000 === 0 ? `${c.ttlMs / 3_600_000}h` : `${Math.round(c.ttlMs / 60_000)}m`
   const left = label === '' ? '' : label === 'expired' || label === '?' ? ' · expired' : ` · ${label} left`
-  const at = new Date(last.at)
   const pick = (next: 'tokens' | 'savings') => update($, cacheView, () => next)
 
   const tile = (key: string, name: string, value: string, color?: string, sub?: string) => (
@@ -2397,7 +2400,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     <Box key="cache-last" flexDirection="column" paddingX={1} marginTop={1} minWidth={0}>
       <Box flexDirection="row" alignItems="center" gap={1} minWidth={0}>
         <Box flexGrow={1} minWidth={0}>
-          <Text dimColor wrap="truncate">{`Last request · ${two(at.getHours())}:${two(at.getMinutes())}`}</Text>
+          <Text dimColor wrap="truncate">{`Last request · ${clockTime(last.at)}`}</Text>
         </Box>
         <Text bold color={hitColor(hitOf(last))}>{`${hitOf(last)}%`}</Text>
       </Box>
@@ -2515,9 +2518,9 @@ const RAIL_W = 44
 const RAIL_CELL_H = 36
 const ICON = 18
 const RAIL_FILL = '\u00a0'.repeat(14)
-const ACCENT = '#8B7CF6'
-const MUTED = '#8A8984'
-const ALERT = '#E09A1E'
+const ACCENT = PURPLE
+const MUTED = QUIET
+const ALERT = ORANGE
 const DIVIDER = '#8080802e'
 
 const SECTIONS: { id: HubSection; title: string; path: string }[] = [
@@ -2558,7 +2561,7 @@ async function sectionInfo($: EngineInterface, id: HubSection, current: HubSecti
   }
   const view = currentView()
   const count = view.kind === 'offer' ? view.items.length : 0
-  const meta = view.kind === 'loading' ? 'thinking…' : count > 0 ? String(count) : ''
+  const meta = view.kind === 'loading' ? 'thinking…' : count > 0 ? plural(count, 'suggestion') : ''
   return { meta, badge: count > 0 && current !== 'next' ? { color: ACCENT, word: plural(count, 'new suggestion') } : null }
 }
 
@@ -2597,8 +2600,8 @@ const SEGMENT_H = 4
 const SEGMENT_GAP = 3
 const MAX_TERMINAL_SEGMENTS = 40
 
-const RUNNING_COLOR = '#8B7CF6'
-const FAILED_COLOR = '#E5484D'
+const RUNNING_COLOR = PURPLE
+const FAILED_COLOR = RED
 const CALL_COLOR: Record<CallKind, string> = { skill: '#14B8A6', agent: '#3B82F6' }
 const CALL_GLYPH: Record<CallKind, string> = { skill: '◆', agent: '●' }
 const CALL_ICON: Record<CallKind, string> = {
@@ -3236,10 +3239,14 @@ function registerCalls(on: On): void {
   })
 }
 
+function callCounts(skills: number, agents: number): string {
+  return [skills > 0 ? plural(skills, 'skill') : '', agents > 0 ? plural(agents, 'agent') : ''].filter(part => part !== '').join(' · ')
+}
+
 async function callsInfo($: EngineInterface, isCurrent: boolean): Promise<SectionInfo> {
   const count = countCalls(await read($, calls))
   if (count.skills + count.agents === 0) return { meta: '', badge: null }
-  const meta = count.running > 0 ? `${count.running} running` : `${plural(count.skills, 'skill')} · ${plural(count.agents, 'agent')}`
+  const meta = count.running > 0 ? `${count.running} running` : callCounts(count.skills, count.agents)
   const badge = count.failed > 0 && !isCurrent ? { color: FAILED_COLOR, word: `${count.failed} failed` } : count.running > 0 && !isCurrent ? { color: RUNNING_COLOR, word: `${count.running} running` } : null
   return { meta, badge }
 }
@@ -3389,7 +3396,7 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     const title = turnNo === 0 ? 'Earlier' : turnNo === currentTurn && isTurnLive ? `This turn${at}` : `Turn ${turnNo}${at}`
     const skills = inTurn.filter(c => c.kind === 'skill').length
     const agents = inTurn.filter(c => c.kind === 'agent').length
-    const counts = [skills > 0 ? plural(skills, 'skill') : '', agents > 0 ? plural(agents, 'agent') : ''].filter(part => part !== '').join(' · ')
+    const counts = callCounts(skills, agents)
     const isQuiet = turnNo !== currentTurn
     return [
       heading(`calls-turn-${turnNo}`, title, i === 0 ? 0 : 1, counts ? [<Text key={`calls-turn-${turnNo}-count`} dimColor>{counts}</Text>] : []),
