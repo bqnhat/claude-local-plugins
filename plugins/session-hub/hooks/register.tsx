@@ -1623,6 +1623,8 @@ function forkPrompt(skills: string, anchors: string): string {
     'the ones that move their actual goal forward the most, not the ones that are merely the most likely ' +
     'or the most obvious. Anchor on the outcome the user is after across this whole session, starting ' +
     'from their original request, not only on your last answer.\n\n' +
+    'This is a short side answer: keep your thinking brief, since the four analysis lines below are all ' +
+    'the reasoning it needs, and write nothing outside the two blocks.\n\n' +
     "First think it through, in the user's language, in an <analysis> block of four short lines:\n" +
     'goal: the outcome the user is ultimately after\n' +
     'state: where that goal stands now\n' +
@@ -1842,6 +1844,8 @@ async function offer($: EngineInterface, items: Suggestion[], goal: string): Pro
   await syncPane($)
 }
 
+const isAwaited = (turnId: string): boolean => view.kind === 'loading' && view.turnId === turnId
+
 async function suggest($: EngineInterface, turnId: string, suggestsSkills: boolean): Promise<void> {
   let items: Suggestion[] = []
   let goal = ''
@@ -1852,6 +1856,7 @@ async function suggest($: EngineInterface, turnId: string, suggestsSkills: boole
     const tally = tallyOffers(await read($, history))
     const anchors = anchorText(await read($, plans), tally)
     const reply = await $.model.fork({ prompt: forkPrompt(skills, anchors) })
+    if (!isAwaited(turnId)) return
     if (reply.isAnswered) {
       $.ui.log(`fork answered with ${reply.usage.output_tokens} output tokens`, { to: 'debug' })
       const parsed = parseReply(reply.text, known, blockedLabels(tally))
@@ -1863,7 +1868,7 @@ async function suggest($: EngineInterface, turnId: string, suggestsSkills: boole
   } catch (error) {
     $.ui.log(`fork failed: ${String(error)}`)
   }
-  if (view.kind !== 'loading' || view.turnId !== turnId) return
+  if (!isAwaited(turnId)) return
   if (items.length === 0) show($, { kind: 'hidden' })
   else await offer($, items, goal)
   if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)

@@ -819,6 +819,31 @@ describe('critic', () => {
     expect(await chipLabel($)).toBe('Mods')
   })
 
+  test('a fork that answers after the person has sent the next prompt asks no critic and offers nothing', async ($, on) => {
+    let release = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const w = world(on, SUGGESTIONS, gate, RANKING)
+    await $.turn.complete({ reason: 'answer', answer: LONG_ANSWER, durationMs: 1, isAborted: false, turnId: 'turn-1' })
+    await $.turn.start({ text: 'next prompt', turnId: 'turn-2' })
+    release()
+    await w.clock.settle()
+
+    expect(w.forkPrompts).toHaveLength(1)
+    expect(w.criticCalls).toEqual([])
+    expect(w.suggested).toEqual([])
+    expect(await chipLabel($)).toBe('Mods')
+  })
+
+  test('the fork is asked to keep its thinking brief and write only the two blocks', async ($, on) => {
+    const w = world(on)
+    await completeTurn($, w)
+
+    expect(w.forkPrompts[0]).toContain('keep your thinking brief')
+    expect(w.forkPrompts[0]).toContain('write nothing outside the two blocks')
+  })
+
   test('a single candidate is shown without asking the critic', async ($, on) => {
     const w = world(on, forkReply([entry('Only one', 'p')]), undefined, RANKING)
     await completeTurn($, w)
