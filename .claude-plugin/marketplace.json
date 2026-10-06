@@ -25,7 +25,7 @@
     {
       "name": "session-hub",
       "source": "./plugins/session-hub",
-      "description": "One Mod status pane for Claude Code Desktop with an icon rail: Progress bars, Next steps suggestions and the prompt-cache countdown, opened from one footer entry"
+      "description": "One Mod status pane for Claude Code Desktop with an icon rail: Progress bars, Next steps suggestions, Skills & agents called this session and a Cache section with per-turn reads, writes, hit rate and savings, opened from one footer entry or the prompt-cache countdown"
     }
   ]
 }

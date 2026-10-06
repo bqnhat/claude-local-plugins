@@ -6,7 +6,7 @@ Function-hooks plugins ("mods") for [Claude Code](https://claude.com/claude-code
 
 | Plugin | Version | What it does |
 | --- | --- | --- |
-| [`session-hub`](plugins/session-hub) | `0.1.0-local.14` | **Recommended.** One "Mod status" pane with Progress bars and Next steps suggestions, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
+| [`session-hub`](plugins/session-hub) | `0.1.0-local.25` | **Recommended.** One "Mod status" pane with Progress bars, Next steps suggestions, the skills and agents called this session, and prompt-cache usage, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
 | [`plan-progress`](plugins/plan-progress) | `0.3.0-local.15` | Live plan progress bars with stages, steps, step times and sounds. Fork of [zycck/claude-mods](https://github.com/zycck/claude-mods) `plan-progress`. |
 | [`next-steps-desktop`](plugins/next-steps-desktop) | `1.0.0-desktop.15` | Up to three suggested next prompts after each turn. Fork of Anthropic's [`next-steps`](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps). |
 | [`cache-timer`](plugins/cache-timer) | `0.1.0-local.3` | A `Cache mm:ss` countdown in the Desktop footer showing how long the prompt cache stays warm. |
@@ -32,13 +32,18 @@ Start a new session afterwards. To pick up a newer version, run `claude plugin m
 
 ### On Desktop
 
-- **Footer entry.** Shows `Mods` when idle, `Progress N` while plan bars are open, `💡 N` when suggestions are ready, or both joined by `·`. Clicking it opens or closes the Mod status pane. Next to it, `⏱ mm:ss` counts down until the prompt cache goes cold. It turns orange near the end.
+- **Footer entry.** Shows `Mods` when idle, `Progress N` while plan bars are open, `💡 N` when suggestions are ready, or both joined by `·`. Clicking it opens or closes the Mod status pane. Next to it, `⏱ mm:ss` counts down until the prompt cache goes cold. It turns orange near the end. Clicking it opens the Cache section.
+- **Icon rail.** The pane has one icon per section: Progress, Next steps, Skills & agents and Cache. A click anywhere on a bar or row opens or collapses it.
 - **Progress section.** The model gets a `plan_progress` tool (`mcp__session-hub__plan_progress`) and a short rule with the first prompt. Larger tasks get a bar of stages and steps, with step times and soft sounds for "needs a decision", "error" and "done". Finished bars stay in a history list.
 - **Next steps section.** After each answer, the plugin forks the session and asks for up to three next prompts, one per kind: `✓` verify (or `⚖` decide), `🔍` dig, `→` advance. Clicking one puts its prompt in the composer as a draft. The plugin never sends a prompt on its own. An optional critic model scores the suggestions and drops weak ones. The fork prompt asks for labels in Vietnamese.
+- **Skills & agents section.** Lists the skills and agents called in this turn, each tagged personal, project, plugin or built-in, and the rule and `CLAUDE.md` files the session loaded.
+- **Cache section.** Built from the main loop's requests in this session; subagent requests are left out. The header shows the cache lifetime, the time left and the turn count, and the last request's read, wrote and new tokens with its hit rate. Two views:
+  - **Tokens.** A chart of stacked read, wrote and new tokens per turn with a hit-rate line (green at 80% or more, orange at 40% or more, red below), session totals, and a table of the last 12 turns. Each turn's tokens add up every request in it, so a turn with many tool calls re-reads the whole context many times.
+  - **Savings.** Running totals of cache reads and writes, and an estimate in input-token equivalents: reads save 0.95 of the input price on Claude Opus 5.5 and 0.9 on other models, writes cost 1 extra with the one-hour cache and 0.25 with the five-minute one. Output tokens are not counted, and the figures are list-price ratios, not your bill.
 
 ### In the terminal
 
-The same progress bars and suggestions are drawn as bands above the prompt.
+The same progress bars and suggestions are drawn as bands above the prompt. The Mod status pane has Progress, Next steps and Skills & agents tabs; the Cache section is Desktop only.
 
 ### Commands
 
