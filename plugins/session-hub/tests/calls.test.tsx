@@ -291,23 +291,23 @@ describe('the Skills & agents section of Mod status', () => {
     await openCalls($)
     const chevron = async () => {
       const ui = await mountPane($)
-      const label = (await ui.find({ type: 'Button', key: 'calls-files-chevron' }))?.props.label
+      const alt = (await ui.findAll({ type: 'Svg' })).map(svg => String(svg.props.alt)).find(one => one === 'Open' || one === 'Fold')
       await ui.unmount()
-      return label
+      return alt
     }
     const pressChevron = async () => {
       const ui = await mountPane($)
       await ui.press({ key: 'calls-files-chevron' })
       await ui.unmount()
     }
-    expect(await chevron()).toBe('›')
+    expect(await chevron()).toBe('Open')
 
     await pressChevron()
-    expect(await chevron()).toBe('⌄')
+    expect(await chevron()).toBe('Fold')
     expect(await paneText($)).toContain('~/.claude/rules/intent-clarification.md')
 
     await pressChevron()
-    expect(await chevron()).toBe('›')
+    expect(await chevron()).toBe('Open')
     expect(await paneText($)).not.toContain('intent-clarification.md')
   })
 

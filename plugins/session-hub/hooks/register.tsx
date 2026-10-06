@@ -3355,7 +3355,12 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
       <Box flexGrow={1} />
       {fresh > 0 ? [<Text key="calls-files-fresh" color={RUNNING_COLOR}>{`+${fresh} ${isTurnLive ? 'this turn' : 'last turn'}`}</Text>] : []}
       {Svg ? (
-        <Button key="calls-files-chevron" plain dimColor label={isFilesOpen ? '⌄' : '›'} onPress={toggleFiles} />
+        <Box key="calls-files-chevron-box" position="relative" flexShrink={0}>
+          <Svg key="calls-files-chevron-mark" source={chevronSvg(isFilesOpen)} alt={isFilesOpen ? 'Fold' : 'Open'} width={CHEVRON} height={CHEVRON} />
+          <Box key="calls-files-chevron-hit" position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
+            <Button key="calls-files-chevron" plain label={CHEVRON_FILL} onPress={toggleFiles} />
+          </Box>
+        </Box>
       ) : (
         <Button key="calls-files-toggle" plain dimColor label={isFilesOpen ? '▾' : '▸'} onPress={toggleFiles} />
       )}
