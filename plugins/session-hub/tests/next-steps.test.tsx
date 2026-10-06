@@ -356,6 +356,27 @@ describe('desktop renderer', () => {
     expect(next?.props).toMatchObject({ width: 44, height: 36 })
   })
 
+  test('while the suggestions are being worked out the pane says so instead of saying there are none', async ($, on) => {
+    let release = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const w = world(on, SUGGESTIONS, gate)
+    await $.turn.complete({ reason: 'answer', answer: LONG_ANSWER, durationMs: 1, isAborted: false, turnId: 'turn-1' })
+
+    let ui = await pane($)
+    if ((await ui.find({ type: 'Button', key: 'rail-next' })) !== undefined) await ui.press({ key: 'rail-next' })
+    await ui.unmount()
+    ui = await pane($)
+    expect(await ui.find({ type: 'Text', text: 'Working out next steps…' })).toBeDefined()
+    await ui.unmount()
+
+    release()
+    await w.clock.settle()
+    ui = await pane($)
+    expect(await ui.find({ type: 'Text', text: 'Working out next steps…' })).toBeUndefined()
+  })
+
   test('a new turn clears the list but leaves the pane where the person put it', async ($, on) => {
     const w = world(on)
     await completeTurn($, w)

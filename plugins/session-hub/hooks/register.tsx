@@ -1944,7 +1944,12 @@ async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): P
   const t = $.ui.resolve(e)
   const { Box, Button, Text } = t
   const shown = view
-  if (shown.kind !== 'offer') return <Text dimColor>No suggestions right now.</Text>
+  if (shown.kind !== 'offer')
+    return (
+      <Box key="next-steps-empty" paddingX={1}>
+        <Text dimColor>{shown.kind === 'loading' ? 'Working out next steps…' : 'No suggestions right now.'}</Text>
+      </Box>
+    )
   const isDesktop = e.surface === 'desktop'
   const columns = e.props.bodyColumns || 40
   const room = Math.max(LABEL_MIN, columns - 8)
