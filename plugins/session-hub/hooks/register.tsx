@@ -34,6 +34,7 @@ const SYNC_LIMIT_MS = 5000
 let paneSync: Promise<void> = Promise.resolve()
 let pressesPending = 0
 let mayBeUp = true
+const loggedFailures = new Set<string>()
 
 const isDesktopSession = async ($: EngineInterface) => (await $.session.surfaces().catch(() => [])).includes('desktop')
 const findPane = async ($: EngineInterface) => (await $.ui.panes().catch(() => [])).find(pane => pane.id === PANE)
@@ -42,6 +43,7 @@ function resetHub(): void {
   paneSync = Promise.resolve()
   pressesPending = 0
   mayBeUp = true
+  loggedFailures.clear()
 }
 
 function syncPane($: EngineInterface, isAsked = false): Promise<void> {
@@ -122,6 +124,9 @@ const TOOL = 'mcp__session-hub__plan_progress'
 const LEGACY_TOOL = 'mcp__plan-progress__plan_progress'
 const MAX_BARS = 3
 const MAX_KEPT = 30
+const MAX_STAGES = 12
+const MAX_STEPS = 120
+const MAX_SUBSTEPS = 12
 const RECENT_DONE = 3
 // a space as wide as a digit, so '  0%' and '100%' take the same room
 const FIGURE_SPACE = String.fromCharCode(0x2007)
@@ -256,20 +261,39 @@ function stampStages(stages: PlanStage[], prev: readonly PlanStage[], now: numbe
   }))
 }
 
+function withinBudget(stages: PlanStage[]): PlanStage[] {
+  let room = MAX_STEPS
+  const kept: PlanStage[] = []
+  for (const s of stages) {
+    if (room <= 0) break
+    const steps = s.steps.slice(0, room)
+    room -= steps.length
+    kept.push({ ...s, steps })
+  }
+  return kept
+}
+
+const isOverBudget = (input: Raw) => {
+  const stages = list(input.stages)
+  const steps = stages.flatMap(s => list(s.steps))
+  return stages.length > MAX_STAGES || steps.length > MAX_STEPS || steps.some(st => list(st.substeps).length > MAX_SUBSTEPS)
+}
+
 function normalize(input: Raw, prev: Plan | null, now: number, id: string): Plan {
   const isPartial = list(input.stages).length === 0 && prev !== null
   const asked = input.state as PlanState
   const kept = prev?.state === 'done' && !isPartial && asked !== 'done' ? null : prev
-  const drawn: PlanStage[] = isPartial ? applyOps(prev.stages, input) : list(input.stages)
+  const drawn: PlanStage[] = isPartial ? applyOps(prev.stages, input) : withinBudget(list(input.stages)
+    .slice(0, MAX_STAGES)
     .map(s => ({
       name: str(s.name, 80) || 'Stage',
-      steps: list(s.steps).map(st => ({
+      steps: list(s.steps).slice(0, MAX_STEPS).map(st => ({
         title: str(st.title) || 'Step',
         status: status(st.status),
-        substeps: list(st.substeps).map(sub => ({ title: str(sub.title) || '…', status: status(sub.status) })),
+        substeps: list(st.substeps).slice(0, MAX_SUBSTEPS).map(sub => ({ title: str(sub.title) || '…', status: status(sub.status) })),
       })),
     }))
-    .filter(s => s.steps.length > 0) as PlanStage[]
+    .filter(s => s.steps.length > 0) as PlanStage[])
   const given = asked === 'done' ? finishAll(drawn) : drawn
   const stages = stampStages(given, kept?.stages ?? [], now)
   const title = str(input.title, 80) || prev?.title || 'Plan'
@@ -930,8 +954,10 @@ function registerProgress(on: On): void {
     const w = where(next)
 
     const active = next.stages.flatMap(st => st.steps).find(st => st.status === 'active')
+    const kept = next.stages.reduce((n, s) => n + s.steps.length, 0)
+    const trimmed = isOverBudget(raw) ? `; kept ${plural(kept, 'step')} in ${plural(next.stages.length, 'stage')}, the bar holds at most ${MAX_STAGES} stages, ${MAX_STEPS} steps and ${MAX_SUBSTEPS} substeps per step` : ''
 
-    return { result: `${id}: ${Math.min(w.pos, w.total)}/${w.total}, ${next.state}${active ? `, active "${active.title}"` : ''}` }
+    return { result: `${id}: ${Math.min(w.pos, w.total)}/${w.total}, ${next.state}${active ? `, active "${active.title}"` : ''}${trimmed}` }
   })
 
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
@@ -3516,6 +3542,16 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   )
 }
 
+function noteFailure($: EngineInterface, where: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  const key = `${where}: ${message}`
+  if (!loggedFailures.has(key)) {
+    loggedFailures.add(key)
+    $.ui.log(`${where} failed to draw: ${message}`)
+  }
+  return message
+}
+
 async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<RenderElement> {
   const t = $.ui.resolve(e)
   const { Box, Button, Text } = t
@@ -3524,10 +3560,21 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
   const columns = e.props.bodyColumns || 40
   const inner = { ...e, props: { ...e.props, bodyColumns: Math.max(20, columns - (Svg ? RAIL_COLUMNS + 1 : 0)) } }
   const sections = Svg ? SECTIONS : SECTIONS.filter(s => s.id !== 'cache')
-  const infos = await Promise.all(sections.map(s => sectionInfo($, s.id, current)))
+  const infos = await Promise.all(
+    sections.map(s =>
+      sectionInfo($, s.id, current).catch((error: unknown): SectionInfo => {
+        noteFailure($, s.title, error)
+        return { meta: '', badge: null }
+      }),
+    ),
+  )
   const active = sections.find(s => s.id === current) ?? sections[0]
   const activeInfo = infos[sections.indexOf(active)]
-  const body = await drawSection($, active.id, inner)
+  const body = await drawSection($, active.id, inner).catch((error: unknown) => (
+    <Box key="section-failed" paddingX={1}>
+      <Text color={RED} wrap="wrap">{`Couldn't draw ${active.title}: ${noteFailure($, active.title, error)}`}</Text>
+    </Box>
+  ))
   const header = (
     <Box key="hub-header" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} paddingX={1} marginBottom={1} minWidth={0}>
       <Text dimColor>{active.title}</Text>
