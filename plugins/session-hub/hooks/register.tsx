@@ -794,6 +794,8 @@ let hasSentBack = false
 let isPersonPrompt = false
 let lastLiveTick = 0
 let lastAgentTick = 0
+let liveTickGap = LIVE_TICK_MS
+let agentTickGap = 0
 
 function registerProgress(on: On): void {
   workCalls = 0
@@ -805,6 +807,8 @@ function registerProgress(on: On): void {
   isPersonPrompt = false
   lastLiveTick = 0
   lastAgentTick = 0
+  liveTickGap = LIVE_TICK_MS
+  agentTickGap = 0
 
   // the rules ride the session's first prompt; a message only carries one short line when bars are open
   on('prompt.submit', async ($, e, next) => {
@@ -1300,13 +1304,15 @@ async function progressStartBefore($: EngineInterface): Promise<void> {
       return
     }
     if (agentHome.size > 0) {
-      if (now - lastAgentTick < ((await isDesktopSession($)) ? PANE_AGENT_TICK_MS : 0)) return
+      if (now - lastAgentTick < agentTickGap) return
       lastAgentTick = now
+      agentTickGap = (await isDesktopSession($)) ? PANE_AGENT_TICK_MS : 0
       await update($, tick, n => n + 1)
       return
     }
-    if (now - lastLiveTick < ((await isDesktopSession($)) ? PANE_LIVE_TICK_MS : LIVE_TICK_MS)) return
+    if (now - lastLiveTick < liveTickGap) return
     lastLiveTick = now
+    liveTickGap = (await isDesktopSession($)) ? PANE_LIVE_TICK_MS : LIVE_TICK_MS
     if ((await read($, plans)).some(p => isDrawn(p) && p.state !== 'done')) await update($, tick, n => n + 1)
   })
   await $.command.register({ name: 'progress', description: 'Show or hide the progress bars' }).catch(() => undefined)
@@ -2027,7 +2033,7 @@ const EXPIRED_COLOR = '#DC2626'
 const STORE_KEY = 'ttl'
 const MARGIN_MS = 30_000
 
-let isTicking = false
+let cacheTimer: { cancel: () => void } | undefined
 let fixedMinutes = 0
 let warnMs = 60_000
 
@@ -2048,18 +2054,20 @@ function learn(gapMs: number, usage: ModelUsage): CacheTtl | undefined {
 }
 
 function startTicking($: EngineInterface): void {
-  if (isTicking) return
-  isTicking = true
-  $.clock.every(1000, async () => {
-    if ((await read($, lastResponseAt)) === null) return
-    await relabel($)
+  cacheTimer?.cancel()
+  const timer = $.clock.every(1000, async () => {
+    if (await relabel($)) return
+    timer.cancel()
+    if (cacheTimer === timer) cacheTimer = undefined
   })
+  cacheTimer = timer
 }
 
-async function relabel($: EngineInterface): Promise<void> {
+async function relabel($: EngineInterface): Promise<boolean> {
   const c = await readCache($)
   const label = c === null ? '' : cacheLabelOf(c)
   if ((await read($, cacheLabel)) !== label) await update($, cacheLabel, () => label)
+  return c !== null && c.isWarm
 }
 
 async function stampResponse($: EngineInterface, usage: ModelUsage | null | undefined): Promise<void> {
@@ -2456,7 +2464,7 @@ async function cacheStartBefore($: EngineInterface): Promise<void> {
 }
 
 function registerCache(on: On, options: Record<string, unknown> | undefined): void {
-  isTicking = false
+  cacheTimer = undefined
   fixedMinutes = typeof options?.ttlMinutes === 'number' && options.ttlMinutes > 0 ? options.ttlMinutes : 0
   warnMs = (typeof options?.warnMinutes === 'number' && options.warnMinutes >= 0 ? options.warnMinutes : 1) * 60_000
 

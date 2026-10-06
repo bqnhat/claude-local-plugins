@@ -8,16 +8,20 @@ const USAGE: ModelUsage = { input_tokens: 10, output_tokens: 10, cache_read_inpu
 const PANE_PROPS = { title: 'Mod status', isFocused: false, bodyColumns: 60, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 30 }, view: {} }
 const TASK = { title: 'Task', stages: [{ name: 'Work', steps: [{ title: 'One', status: 'active' }, { title: 'Two', status: 'pending' }] }] }
 
-type World = { clock: MockClock; footerDraws: number; sectionReads: number }
+type World = { clock: MockClock; footerDraws: number; sectionReads: number; cacheReads: number; surfaceQueries: number }
 
 function world(on: On): World {
-  const w: World = { clock: mock.clock(on), footerDraws: 0, sectionReads: 0 }
+  const w: World = { clock: mock.clock(on), footerDraws: 0, sectionReads: 0, cacheReads: 0, surfaceQueries: 0 }
   mock.store(on, {})
   on('state.get', async ($, e, next) => {
     if (e.plugin === PLUGIN && e.key === 'section') w.sectionReads += 1
+    if (e.plugin === PLUGIN && (e.key === 'lastResponseAt' || e.key === 'cacheLabel')) w.cacheReads += 1
     return next(e)
   })
-  on('session.surfaces', async () => ({ value: ['desktop'] }))
+  on('session.surfaces', async () => {
+    w.surfaceQueries += 1
+    return { value: ['desktop'] }
+  })
   on('session.messages', async () => ({ value: [] }))
   on('session.start', async (_$, e) => ({ cwd: e.cwd }))
   on('ui.open', async () => ({ value: { isPlaced: true as const } }))
@@ -44,12 +48,14 @@ async function respond($: Engine) {
   }
 }
 
-async function minute($: Engine, w: World): Promise<World> {
+async function minute($: Engine, w: World, seconds = 60): Promise<World> {
   const footer = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'SessionMode', props: { modes: [] } })
   const pane = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'Pane', requestId: PLUGIN, props: PANE_PROPS } as never)
   w.footerDraws = 0
   w.sectionReads = 0
-  for (let i = 0; i < 60; i++) await w.clock.advance(1000)
+  w.cacheReads = 0
+  w.surfaceQueries = 0
+  for (let i = 0; i < seconds; i++) await w.clock.advance(1000)
   await footer.unmount()
   await pane.unmount()
   return w
@@ -77,5 +83,38 @@ describe('redraws while nothing happens', () => {
 
     expect(w.sectionReads).toBeGreaterThan(0)
     expect(w.sectionReads).toBeLessThanOrEqual(13)
+  })
+
+  test('once the cache has lapsed and nothing is live, ten idle minutes leave the cache state alone and draw nothing', async ($, on) => {
+    const w = world(on)
+    await $.session.start({ cwd: '/work' } as never)
+    await respond($)
+    await w.clock.advance(6 * 60_000)
+    await minute($, w, 600)
+
+    expect(w.cacheReads).toBe(0)
+    expect(w.footerDraws).toBe(0)
+    expect(w.sectionReads).toBe(0)
+  })
+
+  test('a response after the cache lapsed starts the countdown again', async ($, on) => {
+    const w = world(on)
+    await $.session.start({ cwd: '/work' } as never)
+    await respond($)
+    await w.clock.advance(6 * 60_000)
+    await respond($)
+    await minute($, w, 90)
+
+    expect(w.footerDraws).toBe(1)
+  })
+
+  test('an idle session asks for its surfaces at most once every ten seconds', async ($, on) => {
+    const w = world(on)
+    await $.session.start({ cwd: '/work' } as never)
+    await $.tool.call({ tool: TOOL, id: 'task', ...TASK })
+    await respond($)
+    await minute($, w, 600)
+
+    expect(w.surfaceQueries).toBeLessThanOrEqual(60)
   })
 })
