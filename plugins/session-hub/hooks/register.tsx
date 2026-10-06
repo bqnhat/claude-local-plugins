@@ -1762,31 +1762,61 @@ const claimsOutsideStep = (prompt: string): boolean => CLAIMED_OUTSIDE_STEP.test
 
 const isKind = (value: unknown): value is SuggestionKind => KINDS.some(kind => kind === value)
 
+const readKind = (value: unknown): unknown => (typeof value === 'string' ? value.trim().toLowerCase() : value)
+
+function withoutTrailingCommas(json: string): string {
+  let out = ''
+  let inString = false
+  for (let index = 0; index < json.length; index += 1) {
+    const char = json[index] ?? ''
+    if (inString) {
+      out += char
+      if (char === '\\') out += json[(index += 1)] ?? ''
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') inString = true
+    if (char === ',' && /^\s*[\]}]/.test(json.slice(index + 1))) continue
+    out += char
+  }
+  return out
+}
+
 function parseJsonArray(text: string): unknown[] | null {
   const start = text.indexOf('[')
   const end = text.lastIndexOf(']')
   if (start === -1 || end <= start) return null
-  try {
-    const parsed: unknown = JSON.parse(text.slice(start, end + 1))
-    return Array.isArray(parsed) ? parsed : null
-  } catch {
-    return null
+  const listed = text.slice(start, end + 1)
+  for (const json of [listed, withoutTrailingCommas(listed)]) {
+    try {
+      const parsed: unknown = JSON.parse(json)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      continue
+    }
   }
+  return null
 }
+
+const KIND_PREFIX = new RegExp(String.raw`^(?:${KINDS.join('|')})(?![\p{L}\p{N}])\s*[:\-–—|]?\s*`, 'iu')
 
 function parseSuggestions(listed: string, known: ReadonlySet<string> | null, blocked: ReadonlySet<string>): Suggestion[] {
   const items: Suggestion[] = []
+  const seen = new Set<string>()
   for (const entry of parseJsonArray(listed) ?? []) {
     if (typeof entry !== 'object' || entry === null) continue
-    const { kind, label, why, prompt } = entry as Record<string, unknown>
+    const { kind: written, label, why, prompt } = entry as Record<string, unknown>
+    const kind = readKind(written)
     if (!isKind(kind) || typeof prompt !== 'string' || typeof why !== 'string') continue
     const filled = cleanText(prompt, PROMPT_LIMIT + 1)
     if (filled === '' || [...filled].length > PROMPT_LIMIT || !namesKnownCommand(filled, known) || claimsOutsideStep(filled)) continue
     const reason = cleanText(why, WHY_MAX)
     if (reason === '') continue
-    const named = typeof label === 'string' ? cleanText(label, LABEL_MAX) : ''
+    const named = typeof label === 'string' ? cleanText(label.trimStart().replace(KIND_PREFIX, ''), LABEL_MAX) : ''
     const shown = named === '' ? cleanText(filled, LABEL_MAX) : named
-    if (blocked.has(labelKey(shown))) continue
+    const promptKey = `prompt ${labelKey(filled)}`
+    if (blocked.has(labelKey(shown)) || seen.has(labelKey(shown)) || seen.has(promptKey)) continue
+    seen.add(labelKey(shown)).add(promptKey)
     items.push({ kind, label: shown, why: reason, prompt: filled })
     if (items.length === MAX_CANDIDATES) break
   }
