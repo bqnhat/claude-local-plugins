@@ -134,6 +134,7 @@ const FOLD_MS = 5000
 const LIVE_TICK_MS = 10_000
 const PANE_LIVE_TICK_MS = 30_000
 const PANE_AGENT_TICK_MS = 5000
+const AGENT_POLL_MS = 5000
 const PLAN_RING = 22
 const SEG_H = 4
 const SEG_W = 1400
@@ -656,18 +657,26 @@ function addRun(p: Plan, run: AgentRun, parentId: string | undefined, now: numbe
 }
 
 // changes one agent's strip inside the latest list; sounds follow the bar's state
-async function editAgent($: EngineInterface, agentId: string, change: (a: AgentRun) => AgentRun) {
-  const home = agentHome.get(agentId)
-  if (!home) return
+async function editAgent($: EngineInterface, agentId: string, change: (a: AgentRun) => AgentRun): Promise<string | undefined> {
+  const home = agentHome.get(agentId) ?? (await read($, plans)).find(p => p.agents?.some(a => a.id === agentId))?.id
+  if (!home) return undefined
   const now = await $.clock.now()
   let before: PlanState | undefined
   let after: PlanState | undefined
   let isFolding = false
+  let isChanged = false
   await update($, plans, list =>
     list.map(p => {
       if (p.id !== home || !p.agents?.some(a => a.id === agentId)) return p
+      const agents = p.agents.map(a => {
+        if (a.id !== agentId) return a
+        const changed = change(a)
+        isChanged = changed !== a
+        return changed
+      })
+      if (!isChanged) return p
       before = p.state
-      const next = syncAuto({ ...p, agents: p.agents.map(a => (a.id === agentId ? change(a) : a)) }, now)
+      const next = syncAuto({ ...p, agents }, now)
       after = next.state
       isFolding = !p.agentsDoneAt && next.agentsDoneAt !== null
       return next
@@ -675,6 +684,30 @@ async function editAgent($: EngineInterface, agentId: string, change: (a: AgentR
   )
   if (isFolding) foldUntil = now + FOLD_MS + 1500
   if (before !== undefined && after !== undefined) chime($, before, after)
+  return isChanged ? home : undefined
+}
+
+const isRunOver = (a: AgentRun) => a.state === 'done' || a.state === 'error'
+
+async function endAgent($: EngineInterface, agentId: string, tool: 'Done' | 'Failed' | 'Stopped'): Promise<void> {
+  const now = await $.clock.now()
+  const isFailed = tool !== 'Done'
+  const home = await editAgent($, agentId, a => (isRunOver(a) ? a : { ...a, state: isFailed ? 'error' : 'done', tool, endedAt: now }))
+  if (isFailed && home !== undefined && home !== AGENTS) play($, 'error')
+  agentHome.delete(agentId)
+  waiting.delete(agentId)
+}
+
+async function settleAgents($: EngineInterface): Promise<void> {
+  const open = new Set((await read($, plans)).flatMap(p => (p.agents ?? []).filter(a => !isRunOver(a)).map(a => a.id)))
+  if (open.size === 0) return
+  const infos = await $.agent.list().catch(() => undefined)
+  for (const info of infos ?? []) {
+    if (!open.has(info.id)) continue
+    if (info.status === 'completed') await endAgent($, info.id, 'Done')
+    else if (info.status === 'failed') await endAgent($, info.id, 'Failed')
+    else if (info.status === 'killed') await endAgent($, info.id, 'Stopped')
+  }
 }
 
 async function hidePlan($: EngineInterface, id: string) {
@@ -853,6 +886,7 @@ let hasSentBack = false
 let isPersonPrompt = false
 let lastLiveTick = 0
 let lastAgentTick = 0
+let lastAgentPoll = 0
 let liveTickGap = LIVE_TICK_MS
 let agentTickGap = 0
 
@@ -866,6 +900,7 @@ function registerProgress(on: On): void {
   isPersonPrompt = false
   lastLiveTick = 0
   lastAgentTick = 0
+  lastAgentPoll = 0
   liveTickGap = LIVE_TICK_MS
   agentTickGap = 0
   replayAfter = null
@@ -1088,7 +1123,7 @@ function registerProgress(on: On): void {
     // the mode often settles an ask by itself in a blink; only a call still held after a moment waits on the person
     if (agentId && useId && verdict.decision === 'ask') {
       $.clock.after(600, async () => {
-        if (toolUses.get(useId) !== agentId) return
+        if (toolUses.get(useId) !== agentId || !agentHome.has(agentId)) return
         waiting.add(agentId)
         await editAgent($, agentId, a => ({ ...a, state: 'waiting', tool: 'Needs approval' }))
       })
@@ -1366,6 +1401,10 @@ async function progressStartBefore($: EngineInterface): Promise<void> {
   $.clock.every(1000, async () => {
     await replayResumed($)
     const now = await $.clock.now()
+    if (now - lastAgentPoll >= AGENT_POLL_MS) {
+      lastAgentPoll = now
+      await settleAgents($)
+    }
     if (now < foldUntil) {
       await update($, tick, n => n + 1)
       return
@@ -1474,16 +1513,7 @@ async function progressBand($: EngineInterface, e: RenderInputOf<'AbovePrompt'>)
 
 async function progressTurnComplete($: EngineInterface, e: Args<'turn.complete'>): Promise<void> {
   const agentId = e.agentId
-  if (agentId && agentHome.has(agentId)) {
-    const now = await $.clock.now()
-    const isFailed = e.reason !== 'answer'
-    const tool = e.reason === 'aborted' ? 'Stopped' : isFailed ? 'Failed' : 'Done'
-    await editAgent($, agentId, a => ({ ...a, state: isFailed ? 'error' : 'done', tool, endedAt: now }))
-    // the mod's own bar sounds through its state; a strip on a task bar sounds here
-    if (isFailed && agentHome.get(agentId) !== AGENTS) play($, 'error')
-    agentHome.delete(agentId)
-    waiting.delete(agentId)
-  }
+  if (agentId && agentHome.has(agentId)) await endAgent($, agentId, e.reason === 'answer' ? 'Done' : e.reason === 'aborted' ? 'Stopped' : 'Failed')
   if (agentId && (await read($, backgroundTaskIds)).includes(agentId)) {
     await update($, backgroundTaskIds, ids => ids.filter(id => id !== agentId))
   }
