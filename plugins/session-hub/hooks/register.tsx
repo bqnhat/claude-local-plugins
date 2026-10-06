@@ -135,6 +135,8 @@ const LIVE_TICK_MS = 10_000
 const PANE_LIVE_TICK_MS = 30_000
 const PANE_AGENT_TICK_MS = 5000
 const AGENT_POLL_MS = 5000
+const SOUND_GAP_MS = 2000
+const ASKED_MS = 60_000
 const PLAN_RING = 22
 const SEG_H = 4
 const SEG_W = 1400
@@ -556,17 +558,31 @@ const STEP_GLYPH: Record<StepStatus, string> = { done: '✓', active: '●', pen
 
 // ---------- engine glue ----------
 
+type SoundName = 'decision' | 'error' | 'done'
+const soundAt = new Map<SoundName, number>()
+const soundsPending = new Set<SoundName>()
+
 // the engine's player first (afplay on macOS); PowerShell where it cannot play
-function play($: EngineInterface, name: 'decision' | 'error' | 'done') {
-  const file = `${$.plugin.root}/sounds/${name}.wav`.replace(/\//g, '\\')
-  void $.audio.play({ asset: `sounds/${name}.wav` }).catch(() =>
-    $.process
-      .run(['powershell', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '(New-Object Media.SoundPlayer $env:SESSION_HUB_SOUND).PlaySync()'], {
-        env: { SESSION_HUB_SOUND: file },
-        timeoutMs: 5000,
-      })
-      .catch(() => undefined),
-  )
+function play($: EngineInterface, name: SoundName) {
+  if (soundsPending.has(name)) return
+  soundsPending.add(name)
+  void $.clock
+    .now()
+    .then(now => {
+      soundsPending.delete(name)
+      if (now - (soundAt.get(name) ?? -Infinity) < SOUND_GAP_MS) return
+      soundAt.set(name, now)
+      const file = `${$.plugin.root}/sounds/${name}.wav`.replace(/\//g, '\\')
+      return $.audio.play({ asset: `sounds/${name}.wav` }).catch(() =>
+        $.process
+          .run(['powershell', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '(New-Object Media.SoundPlayer $env:SESSION_HUB_SOUND).PlaySync()'], {
+            env: { SESSION_HUB_SOUND: file },
+            timeoutMs: 5000,
+          })
+          .catch(() => undefined),
+      )
+    })
+    .catch(() => soundsPending.delete(name))
 }
 
 const slug = (s: string) =>
@@ -683,7 +699,7 @@ async function editAgent($: EngineInterface, agentId: string, change: (a: AgentR
     }),
   )
   if (isFolding) foldUntil = now + FOLD_MS + 1500
-  if (before !== undefined && after !== undefined) chime($, before, after)
+  if (before !== undefined && after !== undefined && !(home === AGENTS && after === 'done')) chime($, before, after)
   return isChanged ? home : undefined
 }
 
@@ -1022,9 +1038,11 @@ function registerProgress(on: On): void {
   })
 
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
-    const live = lastTouched((await read($, plans)).filter(p => p.state === 'running'))
+    const bars = await read($, plans)
+    const now = await $.clock.now()
+    const live = lastTouched(bars.filter(p => p.state === 'running'))
     if (live) await update($, plans, list => list.map(p => (p.id === live.id ? { ...p, state: 'needs_input' as const } : p)))
-    play($, 'decision')
+    if (!bars.some(p => p.state === 'needs_input' && now - touchedAt(p) < ASKED_MS)) play($, 'decision')
     const ran = await next(e)
     if (live) await update($, plans, list => list.map(p => (p.id === live.id && p.state === 'needs_input' ? { ...p, state: 'running' as const } : p)))
 
@@ -1125,7 +1143,8 @@ function registerProgress(on: On): void {
       $.clock.after(600, async () => {
         if (toolUses.get(useId) !== agentId || !agentHome.has(agentId)) return
         waiting.add(agentId)
-        await editAgent($, agentId, a => ({ ...a, state: 'waiting', tool: 'Needs approval' }))
+        const home = await editAgent($, agentId, a => ({ ...a, state: 'waiting', tool: 'Needs approval' }))
+        if (home !== undefined && home !== AGENTS) play($, 'decision')
       })
     }
 
