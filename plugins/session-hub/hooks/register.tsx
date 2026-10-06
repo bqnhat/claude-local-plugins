@@ -2328,8 +2328,16 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
       </Text>
     )
   const cell = (key: string, width: number, text: string, color?: string) => (
-    <Box key={key} width={width} flexShrink={0} justifyContent="flex-end">
-      {color ? <Text color={color}>{text}</Text> : <Text dimColor>{text}</Text>}
+    <Box key={key} width={width} flexShrink={1} minWidth={0} justifyContent="flex-end">
+      {color ? (
+        <Text color={color} wrap="truncate">
+          {text}
+        </Text>
+      ) : (
+        <Text dimColor wrap="truncate">
+          {text}
+        </Text>
+      )}
     </Box>
   )
 
@@ -2380,7 +2388,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     </Box>,
     <Box key="cache-table" flexDirection="column" paddingX={1} marginTop={1} minWidth={0}>
       <Box key="cache-table-head" flexDirection="row" minWidth={0}>
-        <Box flexGrow={1} minWidth={0}>
+        <Box width={4} flexGrow={1} flexShrink={0}>
           <Text dimColor>Turn</Text>
         </Box>
         {cell('cache-th-steps', 7, 'Steps')}
@@ -2391,7 +2399,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
       </Box>
       {[...shown].reverse().map(one => (
         <Box key={`cache-row-${one.turn}`} flexDirection="row" minWidth={0}>
-          <Box flexGrow={1} minWidth={0}>
+          <Box width={4} flexGrow={1} flexShrink={0}>
             <Text>{String(one.turn)}</Text>
           </Box>
           {cell(`cache-steps-${one.turn}`, 7, String(one.steps))}

@@ -150,6 +150,22 @@ describe('the Cache section of Mod status', () => {
     expect(await texts($)).toContain('Session totals · 14 turns · 14 requests')
   })
 
+  test('the table columns shrink to a narrow pane while the turn number keeps its room', async ($, on) => {
+    const w = world(on)
+    await press($, 'rail-cache')
+    await request($, w, 't1', { read: 1_770_000, write: 34_700, fresh: 26 })
+
+    const ui = await mountPane($)
+    const boxes = await ui.findAll({ type: 'Box' })
+    await ui.unmount()
+    const numbers = boxes.filter(box => /^cache-(th|steps|read|write|new|hit)-/.test(String(box.key ?? '')))
+    expect(numbers.length).toBeGreaterThan(0)
+    for (const box of numbers) expect(box.props).toMatchObject({ flexShrink: 1, minWidth: 0 })
+    const turnCells = boxes.filter(box => box.props.width === 4)
+    expect(turnCells.length).toBeGreaterThanOrEqual(2)
+    for (const box of turnCells) expect(box.props.flexShrink).toBe(0)
+  })
+
   test('Savings switches the view, works out what the cache saved, and the choice stays', async ($, on) => {
     const w = world(on)
     await press($, 'rail-cache')
