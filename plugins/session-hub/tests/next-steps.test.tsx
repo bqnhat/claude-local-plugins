@@ -49,6 +49,7 @@ type World = {
   suggested: string[]
   submitted: string[]
   logged: string[]
+  shown: string[]
   panes: Set<string>
   opened: { id: string; title?: string }[]
   behind: Set<string>
@@ -67,6 +68,7 @@ function world(on: On, reply: string | Error = SUGGESTIONS, gate?: Promise<void>
     suggested: [],
     submitted: [],
     logged: [],
+    shown: [],
     panes: new Set(),
     opened: [],
     behind: new Set(),
@@ -111,6 +113,7 @@ function world(on: On, reply: string | Error = SUGGESTIONS, gate?: Promise<void>
   })
   on('ui.log', async (_$, e) => {
     w.logged.push(e.text)
+    if (e.to !== 'debug') w.shown.push(e.text)
     return { value: undefined }
   })
   on('ui.toast', async (_$, e) => {
@@ -748,6 +751,7 @@ describe('critic', () => {
     const ui = await pane($)
     expect(await whys(ui)).toEqual(['Why: Settings page', 'Why: Run the tests'])
     expect(w.logged).toContain('critic opus kept 2 of 4')
+    expect(w.shown.filter(line => line.includes('output tokens') || line.includes(' kept '))).toEqual([])
   })
 
   test('haiku can grade instead', { options: { critic: 'haiku' } }, async ($, on) => {

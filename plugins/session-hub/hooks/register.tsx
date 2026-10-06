@@ -1749,11 +1749,8 @@ async function rankCandidates($: EngineInterface, parsed: ParsedReply, model: Ex
       timeoutMs: CRITIC_TIMEOUT_MS,
     })
     const ranked = reply.isAnswered ? parseRanking(reply.text, parsed.items) : null
-    $.ui.log(
-      ranked === null
-        ? `critic ${model} gave no ranking${reply.isAnswered ? '' : `: ${reply.reason}`}`
-        : `critic ${model} kept ${ranked.length} of ${parsed.items.length}`,
-    )
+    if (ranked === null) $.ui.log(`critic ${model} gave no ranking${reply.isAnswered ? '' : `: ${reply.reason}`}`)
+    else $.ui.log(`critic ${model} kept ${ranked.length} of ${parsed.items.length}`, { to: 'debug' })
     return ranked ?? parsed.items
   } catch (error) {
     $.ui.log(`critic ${model} failed: ${String(error)}`)
@@ -1795,7 +1792,7 @@ async function suggest($: EngineInterface, turnId: string, suggestsSkills: boole
     const anchors = anchorText(await read($, plans), tally)
     const reply = await $.model.fork({ prompt: forkPrompt(skills, anchors) })
     if (reply.isAnswered) {
-      $.ui.log(`fork answered with ${reply.usage.output_tokens} output tokens`)
+      $.ui.log(`fork answered with ${reply.usage.output_tokens} output tokens`, { to: 'debug' })
       const parsed = parseReply(reply.text, known, blockedLabels(tally))
       goal = parsed.goal
       items = pickBySlot(critic === 'off' ? parsed.items : await rankCandidates($, parsed, critic))
