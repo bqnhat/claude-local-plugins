@@ -116,4 +116,36 @@ describe('the sound fallback', () => {
       expect(['decision', 'error', 'done'].some(name => sound.endsWith(`\\sounds\\${name}.wav`))).toBe(true)
     }
   })
+
+  async function ring(on: On, $: Engine, surfaces: ('terminal' | 'desktop')[], env: Record<string, string>) {
+    mock.clock(on)
+    mock.env(on, env)
+    const heard = { engine: 0, powershell: 0 }
+    on('session.surfaces', async () => ({ value: surfaces }))
+    on('command.register', async () => ({ value: undefined }))
+    on('tool.register', async () => ({ value: undefined }))
+    on('audio.play', async () => {
+      heard.engine += 1
+      return { value: undefined }
+    })
+    on('process.run', async () => {
+      heard.powershell += 1
+      return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } as never }
+    })
+    await $.command.run({ command: 'progress-sounds' } as never)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    return heard
+  }
+
+  test('a Windows terminal, whose engine player resolves without a sound, rings through PowerShell', async ($, on) => {
+    expect(await ring(on, $, ['terminal'], { OS: 'Windows_NT' })).toEqual({ engine: 0, powershell: 1 })
+  })
+
+  test('the desktop app on Windows keeps the engine player', async ($, on) => {
+    expect(await ring(on, $, ['terminal', 'desktop'], { OS: 'Windows_NT' })).toEqual({ engine: 1, powershell: 0 })
+  })
+
+  test('a terminal off Windows keeps the engine player', async ($, on) => {
+    expect(await ring(on, $, ['terminal'], {})).toEqual({ engine: 1, powershell: 0 })
+  })
 })

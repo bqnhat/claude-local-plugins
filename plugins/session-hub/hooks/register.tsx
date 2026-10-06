@@ -562,25 +562,32 @@ type SoundName = 'decision' | 'error' | 'done'
 const soundAt = new Map<SoundName, number>()
 const soundsPending = new Set<SoundName>()
 
+async function isSilentPlayer($: EngineInterface): Promise<boolean> {
+  if ((await $.env.get('OS').catch(() => undefined)) !== 'Windows_NT') return false
+  const surfaces = await $.session.surfaces().catch(() => [])
+  return surfaces.length > 0 && surfaces.every(surface => surface === 'terminal')
+}
+
 // the engine's player first (afplay on macOS); PowerShell where it cannot play
 function play($: EngineInterface, name: SoundName) {
   if (soundsPending.has(name)) return
   soundsPending.add(name)
   void $.clock
     .now()
-    .then(now => {
+    .then(async now => {
       soundsPending.delete(name)
       if (now - (soundAt.get(name) ?? -Infinity) < SOUND_GAP_MS) return
       soundAt.set(name, now)
       const file = `${$.plugin.root}/sounds/${name}.wav`.replace(/\//g, '\\')
-      return $.audio.play({ asset: `sounds/${name}.wav` }).catch(() =>
+      const viaPowerShell = () =>
         $.process
           .run(['powershell', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '(New-Object Media.SoundPlayer $env:SESSION_HUB_SOUND).PlaySync()'], {
             env: { SESSION_HUB_SOUND: file },
             timeoutMs: 5000,
           })
-          .catch(() => undefined),
-      )
+          .catch(() => undefined)
+      if (await isSilentPlayer($)) return viaPowerShell()
+      return $.audio.play({ asset: `sounds/${name}.wav` }).catch(viaPowerShell)
     })
     .catch(() => soundsPending.delete(name))
 }

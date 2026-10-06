@@ -6,7 +6,7 @@ Function-hooks plugins ("mods") for [Claude Code](https://claude.com/claude-code
 
 | Plugin | Version | What it does |
 | --- | --- | --- |
-| [`session-hub`](plugins/session-hub) | `0.1.0-local.52` | **Recommended.** One "Mod status" pane with Progress bars, Next steps suggestions, the skills and agents called this session, and prompt-cache usage, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
+| [`session-hub`](plugins/session-hub) | `0.1.0-local.53` | **Recommended.** One "Mod status" pane with Progress bars, Next steps suggestions, the skills and agents called this session, and prompt-cache usage, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
 | [`plan-progress`](plugins/plan-progress) | `0.3.0-local.15` | Live plan progress bars with stages, steps, step times and sounds. Fork of [zycck/claude-mods](https://github.com/zycck/claude-mods) `plan-progress`. |
 | [`next-steps-desktop`](plugins/next-steps-desktop) | `1.0.0-desktop.15` | Up to three suggested next prompts after each turn. Fork of Anthropic's [`next-steps`](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps). |
 | [`cache-timer`](plugins/cache-timer) | `0.1.0-local.3` | A `Cache mm:ss` countdown in the Desktop footer showing how long the prompt cache stays warm. |
@@ -26,7 +26,7 @@ Start a new session afterwards. To pick up a newer version, run `claude plugin m
 
 - Function hooks are early access. An installed plugin's hooks module loads only while the engine's `tengu_plugin_hooks_modules` rollout is on for the session, or, on Claude Code builds that still read it (2.1.284), while `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is set. Without either, the plugin installs but draws nothing.
 - In the Desktop Code tab, panes and footer entries need the bundled Claude Code to be 2.1.286 or later.
-- Sounds go through `$.audio.play`. If that fails, they fall back to PowerShell, which only works on Windows.
+- Sounds go through `$.audio.play`. If that fails, they fall back to PowerShell, which only works on Windows. A Windows terminal session goes straight to PowerShell, because the engine has no player there and `$.audio.play` stays silent.
 
 ## session-hub
 
