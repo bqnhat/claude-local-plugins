@@ -85,7 +85,9 @@ claude plugin validate .
 claude plugin test .
 ```
 
-Bump `version` in `plugin.json` with every change, or `claude plugin update` will keep the cached copy. `upstream/` holds the diffs of `plan-progress` and `next-steps-desktop` against the upstream versions they were forked from.
+This repository is the only place these plugins are developed. The former standalone repositories [`bqnhat/plan-progress`](https://github.com/bqnhat/plan-progress) and [`bqnhat/next-steps-desktop`](https://github.com/bqnhat/next-steps-desktop) are archived.
+
+Bump `version` in `plugin.json` with every change, or `claude plugin update` will keep the cached copy, and commit and push each version so GitHub matches what is installed. A session keeps the version it loaded at start; open a new session to run an update. `upstream/` holds the diffs of `plan-progress` and `next-steps-desktop` against the upstream versions they were forked from.
 
 ## Credits and license
 
