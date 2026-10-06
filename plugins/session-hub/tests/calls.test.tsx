@@ -28,7 +28,7 @@ const BREAKDOWN = {
     skillFrontmatter: [
       { name: 'clarify', source: 'userSettings', tokens: 1 },
       { name: 'eli5', source: 'userSettings', tokens: 1 },
-      { name: 'new-ui-issue-fix', source: 'projectSettings', tokens: 1 },
+      { name: 'fix-issue', source: 'projectSettings', tokens: 1 },
       { name: 'debug', source: 'plugin', pluginName: 'engineering', tokens: 1 },
     ],
   },
@@ -173,7 +173,7 @@ describe('the Skills & agents section of Mod status', () => {
   test('tells project skills from plugin skills by the dot each row carries', async ($, on) => {
     world(on)
     await warmTurn($)
-    await $.tool.call({ tool: 'Skill', skill: 'new-ui-issue-fix' })
+    await $.tool.call({ tool: 'Skill', skill: 'fix-issue' })
     await $.tool.call({ tool: 'Skill', skill: 'engineering:debug' })
     await openCalls($)
     const alts = await svgAlts($)
@@ -191,10 +191,10 @@ describe('the Skills & agents section of Mod status', () => {
     await openCalls($)
     expect(await paneText($)).toContain('No skills or agents called yet.')
 
-    await startTurn($, '/new-ui-issue-fix 42', 't1')
-    await $.skill.prompt({ skill: 'new-ui-issue-fix', text: 'expanded' })
+    await startTurn($, '/fix-issue 42', 't1')
+    await $.skill.prompt({ skill: 'fix-issue', text: 'expanded' })
     const text = await paneText($)
-    expect(slashRows(text, 'new-ui-issue-fix')).toBe(1)
+    expect(slashRows(text, 'fix-issue')).toBe(1)
     expect(text).toContain('Project')
     expect(text).not.toContain('clarify')
   })
@@ -211,10 +211,10 @@ describe('the Skills & agents section of Mod status', () => {
     expect(text).toContain('This turn')
     await endTurn($, 't1')
 
-    await $.skill.prompt({ skill: 'new-ui-issue-fix', text: 'expanded' })
-    await startTurn($, '<command-name>/new-ui-issue-fix</command-name>', 't2')
+    await $.skill.prompt({ skill: 'fix-issue', text: 'expanded' })
+    await startTurn($, '<command-name>/fix-issue</command-name>', 't2')
     text = await paneText($)
-    expect(slashRows(text, 'new-ui-issue-fix')).toBe(1)
+    expect(slashRows(text, 'fix-issue')).toBe(1)
     expect(slashRows(text, 'eli5')).toBe(1)
   })
 
@@ -580,7 +580,7 @@ describe('the Skills & agents section of Mod status', () => {
     w.agentResult = { status: 'async_launched', agentId: 'bg-1', description: 'Long search', prompt: 'p', outputFile: 'out' }
     await $.tool.call({ tool: 'Agent', description: 'Long search', prompt: 'p', subagent_type: 'Explore' })
     await endTurn($, 't1')
-    for (const [i, skill] of ['clarify', 'new-ui-issue-fix', 'engineering:debug'].entries()) {
+    for (const [i, skill] of ['clarify', 'fix-issue', 'engineering:debug'].entries()) {
       await startTurn($, `step ${i}`, `t${i + 2}`)
       await $.tool.call({ tool: 'Skill', skill })
       await endTurn($, `t${i + 2}`)

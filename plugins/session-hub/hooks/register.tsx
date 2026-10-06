@@ -560,7 +560,10 @@ function play($: EngineInterface, name: 'decision' | 'error' | 'done') {
   const file = `${$.plugin.root}/sounds/${name}.wav`.replace(/\//g, '\\')
   void $.audio.play({ asset: `sounds/${name}.wav` }).catch(() =>
     $.process
-      .run(['powershell', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', `(New-Object Media.SoundPlayer '${file}').PlaySync()`], { timeoutMs: 5000 })
+      .run(['powershell', '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '(New-Object Media.SoundPlayer $env:SESSION_HUB_SOUND).PlaySync()'], {
+        env: { SESSION_HUB_SOUND: file },
+        timeoutMs: 5000,
+      })
       .catch(() => undefined),
   )
 }
@@ -865,7 +868,7 @@ function registerProgress(on: On): void {
     const line = `plan-progress open bars: ${open
       .map(p => {
         const w = where(p)
-        return `${p.id} (${p.stages[w.stage]?.name ?? ''} ${w.step}/${w.stageSize}${p.state === 'running' ? '' : `, ${p.state}`})`
+        return `${p.id} (${inertTags(p.stages[w.stage]?.name ?? '')} ${w.step}/${w.stageSize}${p.state === 'running' ? '' : `, ${p.state}`})`
       })
       .join(', ')}`
 
@@ -1523,6 +1526,8 @@ const UNSEEN_CHARACTERS =
   /[\p{Cc}\p{Cf}\p{Cn}\p{Co}\p{Cs}\p{Variation_Selector}\u115f\u1160\u3164\uffa0]/gu
 const COMBINING_RUN = /(\p{M}{3})\p{M}+/gu
 
+const inertTags = (text: string): string => text.replace(/</g, '‹').replace(/>/g, '›')
+
 function cleanText(text: string, max: number): string {
   if (TAG_CHARACTERS.test(text)) return ''
   const safe = text
@@ -1553,7 +1558,7 @@ function skillList(commands: readonly CommandInfo[]): string {
     if (command.source === 'builtin') continue
     const name = cleanText(command.name, SKILL_NAME_MAX)
     if (name === '' || name !== command.name) continue
-    const line = `/${name}: ${cleanText(command.description, SKILL_DESCRIPTION_MAX)}`
+    const line = `/${name}: ${inertTags(cleanText(command.description, SKILL_DESCRIPTION_MAX))}`
     if (describedChars + line.length <= SKILLS_DESCRIBED_BUDGET) {
       described.push(line)
       describedChars += line.length + 1
@@ -1591,8 +1596,8 @@ function openSteps(all: readonly Plan[]): string {
     if (plan.id === AGENTS || plan.state === 'done' || plan.hidden) continue
     const open = plan.stages.flatMap(stage => stage.steps).filter(step => !isFinished(step.status))
     if (open.length === 0) continue
-    const steps = open.slice(0, OPEN_STEPS_MAX).map(step => `${cleanText(step.title, PLAN_TITLE_MAX)}${step.status === 'active' ? ' (active)' : ''}`)
-    lines.push(`- ${cleanText(plan.title, PLAN_TITLE_MAX)}: ${steps.join('; ')}`)
+    const steps = open.slice(0, OPEN_STEPS_MAX).map(step => `${inertTags(cleanText(step.title, PLAN_TITLE_MAX))}${step.status === 'active' ? ' (active)' : ''}`)
+    lines.push(`- ${inertTags(cleanText(plan.title, PLAN_TITLE_MAX))}: ${steps.join('; ')}`)
   }
   return [...lines.join('\n')].slice(0, PLAN_CONTEXT_MAX).join('')
 }
@@ -1607,7 +1612,7 @@ function anchorText(all: readonly Plan[], tally: Tally): string {
         'ignore the steps that no longer matter.',
     )
   }
-  const earlier = [...tally.values()].map(seen => `- "${seen.label}": ${seen.isTaken ? 'taken' : `passed over ×${seen.passes}`}`)
+  const earlier = [...tally.values()].map(seen => `- "${inertTags(seen.label)}": ${seen.isTaken ? 'taken' : `passed over ×${seen.passes}`}`)
   if (earlier.length > 0) {
     parts.push(
       `Suggestions offered on earlier turns:\n<earlier-suggestions>\n${earlier.join('\n')}\n</earlier-suggestions>\n` +
@@ -1734,12 +1739,13 @@ function parseSuggestions(listed: string, known: ReadonlySet<string> | null, blo
 type ParsedReply = { goal: string; analysis: string; items: Suggestion[] }
 
 const ANALYSIS_BLOCK = /<analysis>([\s\S]*?)<\/analysis>/i
-const SUGGESTIONS_BLOCK = /<suggestions>([\s\S]*?)<\/suggestions>/i
+const SUGGESTIONS_BLOCKS = /<suggestions>([\s\S]*?)<\/suggestions>/gi
 const GOAL_LINE = /^\s*goal\s*:\s*(.+)$/im
 
 function parseReply(reply: string, known: ReadonlySet<string> | null, blocked: ReadonlySet<string>): ParsedReply {
   const analysis = ANALYSIS_BLOCK.exec(reply)?.[1] ?? ''
-  const listed = SUGGESTIONS_BLOCK.exec(reply)?.[1] ?? reply.replace(ANALYSIS_BLOCK, '')
+  const outside = reply.replace(ANALYSIS_BLOCK, '')
+  const listed = [...outside.matchAll(SUGGESTIONS_BLOCKS)].at(-1)?.[1] ?? outside
   return {
     goal: cleanText(GOAL_LINE.exec(analysis)?.[1] ?? '', GOAL_MAX),
     analysis: cleanText(analysis, ANALYSIS_MAX),

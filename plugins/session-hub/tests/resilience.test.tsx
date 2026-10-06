@@ -90,3 +90,30 @@ describe('when something fails', () => {
     expect(JSON.stringify(reply)).not.toContain('kept')
   })
 })
+
+describe('the sound fallback', () => {
+  test('hands PowerShell the sound path through the environment, never inside the command text', async ($, on) => {
+    mock.clock(on)
+    const runs: { argv: readonly string[]; env?: Record<string, string> }[] = []
+    on('session.surfaces', async () => ({ value: ['desktop' as const] }))
+    on('command.register', async () => ({ value: undefined }))
+    on('tool.register', async () => ({ value: undefined }))
+    on('audio.play', async () => {
+      throw new Error('no player')
+    })
+    on('process.run', async (_$, e) => {
+      runs.push({ argv: e.argv, env: e.init?.env })
+      return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } as never }
+    })
+    await $.command.run({ command: 'progress-sounds' } as never)
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    expect(runs.length).toBeGreaterThan(0)
+    for (const run of runs) {
+      expect(run.argv.at(-1)).toBe('(New-Object Media.SoundPlayer $env:SESSION_HUB_SOUND).PlaySync()')
+      expect(run.argv.join(' ')).not.toContain('sounds')
+      const sound = run.env?.SESSION_HUB_SOUND ?? ''
+      expect(['decision', 'error', 'done'].some(name => sound.endsWith(`\\sounds\\${name}.wav`))).toBe(true)
+    }
+  })
+})
