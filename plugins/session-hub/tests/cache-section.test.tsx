@@ -227,6 +227,18 @@ describe('the Cache section of Mod status', () => {
     expect(['≈ 95k', 'read × 0.95', '≈ 2.5k', '≈ 92.5k', '≈ 84% of input'].filter(one => !lines.includes(one))).toEqual([])
   })
 
+  test('reads on Claude Fable 5.1 and Claude Mythos 5.1 save 0.975 of the input price', async ($, on) => {
+    const w = world(on, ['desktop'], 'claude-fable-5-1')
+    await press($, 'rail-cache')
+    await request($, w, 't1', { read: 100_000, write: 0, fresh: 0 })
+    w.model = 'claude-mythos-5-1'
+    await request($, w, 't2', { read: 100_000, write: 10_000, fresh: 0 })
+    await press($, 'cache-view-savings')
+
+    const lines = await texts($)
+    expect(['≈ 195k', 'read × 0.975', '≈ 2.5k', '≈ 193k', '≈ 92% of input'].filter(one => !lines.includes(one))).toEqual([])
+  })
+
   test('a session that switches models counts each request at its own model price', async ($, on) => {
     const w = world(on, ['desktop'], 'claude-opus-5-5')
     await press($, 'rail-cache')

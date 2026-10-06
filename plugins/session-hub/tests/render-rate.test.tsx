@@ -16,7 +16,7 @@ function world(on: On): World {
   mock.store(on, {})
   on('state.get', async ($, e, next) => {
     if (e.plugin === PLUGIN && e.key === 'section') w.sectionReads += 1
-    if (e.plugin === PLUGIN && (e.key === 'lastResponseAt' || e.key === 'cacheLabel')) w.cacheReads += 1
+    if (e.plugin === PLUGIN && (e.key === 'lastRequestAt' || e.key === 'cacheLabel')) w.cacheReads += 1
     return next(e)
   })
   on('session.surfaces', async () => {

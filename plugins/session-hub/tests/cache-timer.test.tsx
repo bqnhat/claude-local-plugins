@@ -7,14 +7,15 @@ const LONG_CLOCK = { timeoutMs: 15_000 }
 const WARM: ModelUsage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 50_000, cache_creation_input_tokens: 100 }
 const COLD: ModelUsage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 50_000 }
 
-type World = { clock: MockClock; usage: ModelUsage }
+type World = { clock: MockClock; usage: ModelUsage; generationMs: number }
 
 function world(on: On, store: Record<string, unknown> = {}): World {
-  const w: World = { clock: mock.clock(on), usage: WARM }
+  const w: World = { clock: mock.clock(on), usage: WARM, generationMs: 0 }
   mock.store(on, store)
   on('ui.render', async () => <></>)
   on('session.start', async (_$, e) => e as never)
   on('turn.step', async function* (_$, e) {
+    if (w.generationMs > 0) await w.clock.advance(w.generationMs)
     return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: w.usage } as never
   })
   return w
@@ -87,6 +88,23 @@ describe('the cache countdown in the Desktop footer', () => {
     await w.clock.advance(2 * 60_000)
     await step($, w, COLD)
     expect((await footer($))?.text).toBe('~5m')
+  })
+
+  test('the countdown runs from when the request was sent, so a three-minute answer leaves two minutes of a five-minute cache', async ($, on) => {
+    const w = world(on, { ttl: '5m' })
+    await $.session.start({ cwd: '/work' } as never)
+    w.generationMs = 3 * 60_000
+    await step($, w, COLD)
+    expect((await footer($))?.text).toBe('2m')
+  })
+
+  test('a long answer after a short pause between requests teaches nothing', async ($, on) => {
+    const w = world(on)
+    await step($, w, COLD)
+    await w.clock.advance(2 * 60_000)
+    w.generationMs = 4 * 60_000
+    await step($, w, WARM)
+    expect((await footer($))?.text).toBe('~1:00')
   })
 
   test('the last minute turns the same orange as a waiting bar and a lapsed known lifetime the same red as a failed one', LONG_CLOCK, async ($, on) => {

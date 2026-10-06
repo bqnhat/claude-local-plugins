@@ -15,7 +15,7 @@ const paneState = atom({ plugin: 'session-hub', key: 'paneState' } as const, 'do
 const section = atom({ plugin: 'session-hub', key: 'section' } as const, 'progress')
 const savedView = atom({ plugin: 'session-hub', key: 'view' } as const, { kind: 'hidden' })
 const history = atom({ plugin: 'session-hub', key: 'history' } as const, [])
-const lastResponseAt = atom({ plugin: 'session-hub', key: 'lastResponseAt' } as const, null)
+const lastRequestAt = atom({ plugin: 'session-hub', key: 'lastRequestAt' } as const, null)
 const ttl = atom({ plugin: 'session-hub', key: 'ttl' } as const, null)
 const cacheLabel = atom({ plugin: 'session-hub', key: 'cacheLabel' } as const, '')
 const cacheSamples = atom({ plugin: 'session-hub', key: 'cacheSamples' } as const, [])
@@ -2208,16 +2208,15 @@ async function relabel($: EngineInterface): Promise<boolean> {
   return c !== null && c.isWarm
 }
 
-async function stampResponse($: EngineInterface, usage: ModelUsage | null | undefined): Promise<void> {
+async function stampResponse($: EngineInterface, sentAt: number, usage: ModelUsage | null | undefined): Promise<void> {
   startTicking($)
-  const at = await $.clock.now()
-  const last = await read($, lastResponseAt)
-  const seen = last === null || !usage ? undefined : learn(at - last, usage)
+  const last = await read($, lastRequestAt)
+  const seen = last === null || !usage ? undefined : learn(sentAt - last, usage)
   if (seen !== undefined && seen !== (await read($, ttl))) {
     await update($, ttl, () => seen)
     await $.store.set(STORE_KEY, seen).catch(() => undefined)
   }
-  await update($, lastResponseAt, () => at)
+  await update($, lastRequestAt, () => sentAt)
   await relabel($)
 }
 
@@ -2228,7 +2227,7 @@ async function restoreTtl($: EngineInterface): Promise<void> {
 }
 
 async function readCache($: EngineInterface): Promise<CacheReading | null> {
-  const last = await read($, lastResponseAt)
+  const last = await read($, lastRequestAt)
   if (last === null) return null
   const learned = await read($, ttl)
   const ttlMs = fixedMinutes > 0 ? fixedMinutes * 60_000 : TTL_MS[learned ?? '5m']
@@ -2260,10 +2259,14 @@ const FRESH_COLOR = PURPLE
 const LOW_COLOR = RED
 const AXIS_COLOR = QUIET
 const READ_SAVING = 0.9
-const READ_SAVING_BY_MODEL: readonly (readonly [string, number])[] = [['claude-opus-5-5', 0.95]]
+const READ_SAVING_BY_MODEL: readonly (readonly [string, number])[] = [
+  ['claude-fable-5-1', 0.975],
+  ['claude-mythos-5-1', 0.975],
+  ['claude-opus-5-5', 0.95],
+]
 const WRITE_EXTRA: Record<CacheTtl, number> = { '5m': 0.25, '1h': 1 }
 
-const readSavingOf = (model: string | undefined) => READ_SAVING_BY_MODEL.find(([id]) => model?.startsWith(id))?.[1] ?? READ_SAVING
+const readSavingOf = (model: string | undefined) => READ_SAVING_BY_MODEL.find(([id]) => model?.includes(id))?.[1] ?? READ_SAVING
 
 type TokenSplit = { read: number; write: number; fresh: number }
 type CacheTurn = TokenSplit & { turn: number; at: number; steps: number }
@@ -2605,9 +2608,10 @@ function registerCache(on: On, options: Record<string, unknown> | undefined): vo
   warnMs = (typeof options?.warnMinutes === 'number' && options.warnMinutes >= 0 ? options.warnMinutes : 1) * 60_000
 
   on('turn.step', async function* ($, e, next) {
+    const sentAt = await $.clock.now()
     const result = yield* next(e)
     if (e.agentId === undefined) {
-      await stampResponse($, result.usage)
+      await stampResponse($, sentAt, result.usage)
       await recordSample($, e.turnId, result.usage)
     }
     return result

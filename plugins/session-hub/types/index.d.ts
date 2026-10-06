@@ -81,7 +81,7 @@ declare module 'claude-code' {
       section: HubSection
       view: View
       history: OfferRecord[]
-      lastResponseAt: number | null
+      lastRequestAt: number | null
       ttl: CacheTtl | null
       cacheLabel: string
       cacheSamples: CacheSample[]
