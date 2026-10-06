@@ -1459,10 +1459,8 @@ async function progressTurnComplete($: EngineInterface, e: Args<'turn.complete'>
   }
   // a plan whose steps are all finished closes itself
   for (const p of await read($, plans)) {
-    if (p.id === AGENTS) continue
-    if (p.state === 'done') continue
-    const steps = p.stages.flatMap(s => s.steps)
-    if (steps.length > 0 && steps.every(s => isFinished(s.status))) await putPlan($, { ...p, state: 'done' })
+    const closed = p.id === AGENTS ? p : closeFinished(p)
+    if (closed !== p) await putPlan($, closed)
   }
   if (!agentId && e.reason === 'answer' && !hasSentBack && agentHome.size === 0 && (await read($, backgroundTaskIds)).length === 0) {
     hasSentBack = await sendBackOpenBars($, e.answer, workCalls > 0 || isPlanTouched)
@@ -1478,8 +1476,6 @@ async function progressTurnComplete($: EngineInterface, e: Args<'turn.complete'>
 // ($.prompt.suggest). Nothing is submitted by the plugin, so no origin framing.
 // The fork is also handed the session's skills and slash commands
 // ($.command.list), so a suggestion can be "/skill arguments".
-
-
 
 const MAX_SUGGESTIONS = 3
 const MAX_CANDIDATES = 8
@@ -2048,41 +2044,18 @@ async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): P
       </Box>
     )
   }
-  const rowFill = ROW_FILL_CHAR.repeat(Math.max(1, Math.floor(columns * ROW_FILL_PER_COLUMN)))
   return (
     <Box flexDirection="column" gap={1}>
       {goalLine}
       {shown.items.map((item, index) => (
-        <Box
-          key={`next-step-row-${index + 1}`}
-          position="relative"
-          flexDirection="row"
-          alignItems="flex-start"
-          gap={1}
-          paddingX={1}
-          minWidth={0}
-          {...(isDesktop ? {} : { hover: { backgroundColor: HOVER_BG } })}
-        >
-          <Text dimColor>{isDesktop ? String(index + 1) : `${index + 1}.`}</Text>
+        <Box key={`next-step-row-${index + 1}`} position="relative" flexDirection="row" alignItems="flex-start" gap={1} paddingX={1} minWidth={0} hover={{ backgroundColor: HOVER_BG }}>
+          <Text dimColor>{`${index + 1}.`}</Text>
           <Box flexDirection="column" flexGrow={1} minWidth={0}>
-            {isDesktop ? (
-              <Text key={`next-step-label-${index + 1}`} wrap="truncate">
-                {fitLabel(kindLabel(item), room)}
-              </Text>
-            ) : (
-              <Button key={`next-step-${index + 1}`} plain label={fitLabel(kindLabel(item), room)} onPress={() => fillDraft($, item.prompt)} />
-            )}
+            <Button key={`next-step-${index + 1}`} plain label={fitLabel(kindLabel(item), room)} onPress={() => fillDraft($, item.prompt)} />
             <Text key={`next-step-why-${index + 1}`} dimColor wrap="wrap">
               {item.why}
             </Text>
           </Box>
-          {isDesktop ? (
-            <Box key={`next-step-hit-${index + 1}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
-              <Button key={`next-step-${index + 1}`} plain label={rowFill} onPress={() => fillDraft($, item.prompt)} />
-            </Box>
-          ) : (
-            []
-          )}
         </Box>
       ))}
     </Box>
@@ -2099,7 +2072,7 @@ let cacheTimer: { cancel: () => void } | undefined
 let fixedMinutes = 0
 let warnMs = 60_000
 
-type CacheReading = { left: number; isGuess: boolean; isWarm: boolean; isWarning: boolean; ttlMs: number; source: 'fixed' | 'learned' | 'assumed'; lastAt: number }
+type CacheReading = { left: number; isGuess: boolean; isWarm: boolean; isWarning: boolean; ttlMs: number }
 
 function clock(ms: number): string {
   const total = Math.ceil(ms / 1000)
@@ -2155,10 +2128,9 @@ async function readCache($: EngineInterface): Promise<CacheReading | null> {
   const last = await read($, lastResponseAt)
   if (last === null) return null
   const learned = await read($, ttl)
-  const source = fixedMinutes > 0 ? 'fixed' : learned === null ? 'assumed' : 'learned'
   const ttlMs = fixedMinutes > 0 ? fixedMinutes * 60_000 : TTL_MS[learned ?? '5m']
   const left = ttlMs - ((await $.clock.now()) - last)
-  return { left, isGuess: source === 'assumed', isWarm: left > 0, isWarning: left > 0 && left <= warnMs, ttlMs, source, lastAt: last }
+  return { left, isGuess: fixedMinutes === 0 && learned === null, isWarm: left > 0, isWarning: left > 0 && left <= warnMs, ttlMs }
 }
 
 function cacheLabelOf(c: CacheReading): string {
@@ -2190,10 +2162,12 @@ const WRITE_EXTRA: Record<CacheTtl, number> = { '5m': 0.25, '1h': 1 }
 
 const readSavingOf = (model: string | undefined) => READ_SAVING_BY_MODEL.find(([id]) => model?.startsWith(id))?.[1] ?? READ_SAVING
 
-type CacheTurn = { turn: number; at: number; steps: number; read: number; write: number; fresh: number }
+type TokenSplit = { read: number; write: number; fresh: number }
+type CacheTurn = TokenSplit & { turn: number; at: number; steps: number }
 
-const promptOf = (t: { read: number; write: number; fresh: number }) => t.read + t.write + t.fresh
-const hitOf = (t: { read: number; write: number; fresh: number }) => (promptOf(t) === 0 ? 0 : Math.round((t.read / promptOf(t)) * 100))
+const promptOf = (t: TokenSplit) => t.read + t.write + t.fresh
+const sumTokens = (list: readonly TokenSplit[]): TokenSplit => list.reduce((sum, t) => ({ read: sum.read + t.read, write: sum.write + t.write, fresh: sum.fresh + t.fresh }), { read: 0, write: 0, fresh: 0 })
+const hitOf = (t: TokenSplit) => (promptOf(t) === 0 ? 0 : Math.round((t.read / promptOf(t)) * 100))
 const hitColor = (pct: number) => (pct >= 80 ? READ_COLOR : pct >= 40 ? WRITE_COLOR : LOW_COLOR)
 
 function tokens(n: number): string {
@@ -2246,7 +2220,7 @@ const svgText = (x: number, y: number, text: string, anchor: 'start' | 'middle' 
 
 const gridLine = (x1: number, x2: number, y: number) => `<line x1="${x1}" x2="${x2}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${AXIS_COLOR}" stroke-opacity=".25"/>`
 
-function lastBarSvg(s: { read: number; write: number; fresh: number }, W: number): string {
+function lastBarSvg(s: TokenSplit, W: number): string {
   const total = Math.max(1, promptOf(s))
   const parts: [number, string][] = [
     [s.read, READ_COLOR],
@@ -2342,9 +2316,7 @@ function savingsChartSvg(turns: readonly CacheTurn[], before: { read: number; wr
 async function cacheInfo($: EngineInterface): Promise<SectionInfo> {
   const samples = await read($, cacheSamples)
   if (samples.length === 0) return { meta: '', badge: null }
-  const total = samples.reduce((sum, s) => ({ read: sum.read + s.read, write: sum.write + s.write, fresh: sum.fresh + s.fresh }), { read: 0, write: 0, fresh: 0 })
-
-  return { meta: `${hitOf(total)}% hit`, badge: null }
+  return { meta: `${hitOf(sumTokens(samples))}% hit`, badge: null }
 }
 
 async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise<RenderElement> {
@@ -2369,8 +2341,8 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
 
   const turns = byCacheTurn(samples)
   const shown = turns.slice(-CHART_TURNS)
-  const earlier = turns.slice(0, turns.length - shown.length).reduce((sum, one) => ({ read: sum.read + one.read, write: sum.write + one.write }), { read: 0, write: 0 })
-  const total = turns.reduce((sum, one) => ({ read: sum.read + one.read, write: sum.write + one.write, fresh: sum.fresh + one.fresh }), { read: 0, write: 0, fresh: 0 })
+  const earlier = sumTokens(turns.slice(0, turns.length - shown.length))
+  const total = sumTokens(turns)
   const last = samples[samples.length - 1]
   const ttlName = c === null ? '' : c.ttlMs % 3_600_000 === 0 ? `${c.ttlMs / 3_600_000}h` : `${Math.round(c.ttlMs / 60_000)}m`
   const left = label === '' ? '' : label === 'expired' || label === '?' ? ' · expired' : ` · ${label} left`
@@ -2545,8 +2517,6 @@ const RAIL_CELL_H = 36
 const ICON = 18
 const RAIL_FILL = '\u00a0'.repeat(14)
 const ACCENT = PURPLE
-const MUTED = QUIET
-const ALERT = ORANGE
 const DIVIDER = '#8080802e'
 
 const SECTIONS: { id: HubSection; title: string; path: string }[] = [
@@ -2568,7 +2538,7 @@ function railCellSvg(path: string, isActive: boolean, badge: Badge): string {
   const scale = ICON / 24
   const bar = isActive ? `<rect x="0" y="6" width="2" height="${RAIL_CELL_H - 12}" rx="1" fill="${ACCENT}"/>` : ''
   const dot = badge === null ? '' : `<circle cx="${at.x + ICON + 1}" cy="${at.y + 1}" r="3" fill="${badge.color}"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${RAIL_W}" height="${RAIL_CELL_H}" viewBox="0 0 ${RAIL_W} ${RAIL_CELL_H}">${bar}<g transform="translate(${at.x} ${at.y}) scale(${scale})" fill="none" stroke="${isActive ? ACCENT : MUTED}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</g>${dot}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${RAIL_W}" height="${RAIL_CELL_H}" viewBox="0 0 ${RAIL_W} ${RAIL_CELL_H}">${bar}<g transform="translate(${at.x} ${at.y}) scale(${scale})" fill="none" stroke="${isActive ? ACCENT : QUIET}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</g>${dot}</svg>`
 }
 
 const isLive = (p: Plan) => p.state !== 'done' && isDrawn(p)
@@ -2583,7 +2553,7 @@ async function sectionInfo($: EngineInterface, id: HubSection, current: HubSecti
     const isFailed = live.some(p => p.state === 'error')
     const done = all.filter(p => p.state === 'done' && !p.hidden).length
     const meta = live.length > 0 ? `${live.length} active` : done > 0 ? `${done} done` : ''
-    return { meta, badge: isFailed ? { color: EXPIRED_COLOR, word: 'failed' } : isAlert ? { color: ALERT, word: 'waiting on you' } : null }
+    return { meta, badge: isFailed ? { color: STATE_COLOR.error, word: STATE_WORD.error } : isAlert ? { color: STATE_COLOR.needs_input, word: STATE_WORD.needs_input } : null }
   }
   const view = currentView()
   const count = view.kind === 'offer' ? view.items.length : 0
@@ -2596,10 +2566,6 @@ async function drawSection($: EngineInterface, id: HubSection, e: RenderInputOf<
   if (id === 'calls') return callsSection($, e)
   if (id === 'cache') return cacheSection($, e)
   return progressSection($, e)
-}
-
-async function pickSection($: EngineInterface, id: HubSection) {
-  await showSection($, id)
 }
 
 const calls = atom({ plugin: 'session-hub', key: 'calls' } as const, [])
@@ -2640,11 +2606,11 @@ const SCOPE_COLOR: Record<OriginScope, string> = {
   local: '#84CC16',
   managed: '#A16207',
   plugin: '#8B5CF6',
-  builtin: MUTED,
+  builtin: QUIET,
   mcp: '#14B8A6',
   synced: '#6366F1',
   memory: '#0EA5E9',
-  unknown: MUTED,
+  unknown: QUIET,
 }
 const SCOPE_LABEL: Record<OriginScope, string> = {
   personal: 'Personal',
@@ -3588,7 +3554,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
       <Box flexDirection="column">
         <Box key="hub-tabs" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} marginBottom={1} minWidth={0}>
           {sections.map(s => (
-            <Button key={`rail-${s.id}`} plain dimColor={s.id !== current} label={s.title} onPress={() => pickSection($, s.id)} />
+            <Button key={`rail-${s.id}`} plain dimColor={s.id !== current} label={s.title} onPress={() => showSection($, s.id)} />
           ))}
         </Box>
         {header}
@@ -3604,7 +3570,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
           <Box key={`rail-cell-${s.id}`} position="relative" flexDirection="row" justifyContent="center" minWidth={RAIL_COLUMNS} flexShrink={0}>
             <Svg source={railCellSvg(s.path, s.id === current, infos[i]?.badge ?? null)} alt={railAlt(s.title, s.id === current, infos[i]?.badge ?? null)}width={RAIL_W} height={RAIL_CELL_H} />
             <Box key={`rail-hit-${s.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
-              <Button key={`rail-${s.id}`} plain label={RAIL_FILL} onPress={() => pickSection($, s.id)} />
+              <Button key={`rail-${s.id}`} plain label={RAIL_FILL} onPress={() => showSection($, s.id)} />
             </Box>
           </Box>
         ))}
