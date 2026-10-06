@@ -823,6 +823,27 @@ async function restoreBarsOnce($: EngineInterface): Promise<void> {
   await syncPane($)
 }
 
+let replayAfter: string | null = null
+
+async function forgetBars($: EngineInterface, endedId: string, isResume: boolean): Promise<void> {
+  agentHome.clear()
+  toolUses.clear()
+  waiting.clear()
+  foldUntil = 0
+  replayAfter = isResume ? endedId : null
+  await update($, plans, () => [])
+  await update($, backgroundTaskIds, () => [])
+  if (isResume) await update($, isRestoreChecked, () => false)
+  await syncPane($)
+}
+
+async function replayResumed($: EngineInterface): Promise<void> {
+  const endedId = replayAfter
+  if (endedId === null || (await $.session.id().catch(() => endedId)) === endedId) return
+  replayAfter = null
+  await restoreBarsOnce($)
+}
+
 let workCalls = 0
 let sinceUpdate = 0
 let isPlanTouched = false
@@ -847,6 +868,7 @@ function registerProgress(on: On): void {
   lastAgentTick = 0
   liveTickGap = LIVE_TICK_MS
   agentTickGap = 0
+  replayAfter = null
 
   // the rules ride the session's first prompt; a message only carries one short line when bars are open
   on('prompt.submit', async ($, e, next) => {
@@ -884,6 +906,7 @@ function registerProgress(on: On): void {
 
   on('session.end', async ($, e, next) => {
     isRulesSent = false
+    if (e.reason === 'clear' || e.reason === 'resume') await forgetBars($, e.sessionId, e.reason === 'resume').catch(() => undefined)
 
     return next(e)
   })
@@ -1341,6 +1364,7 @@ async function progressStartBefore($: EngineInterface): Promise<void> {
     },
   })
   $.clock.every(1000, async () => {
+    await replayResumed($)
     const now = await $.clock.now()
     if (now < foldUntil) {
       await update($, tick, n => n + 1)

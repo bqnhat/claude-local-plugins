@@ -134,3 +134,96 @@ describe('bars after a rewind or resume', () => {
     expect(await ui.find({ type: 'Button', key: 'close-second' })).toBeUndefined()
   })
 })
+
+type Switch = World & { id: string; contexts: (readonly string[])[]; clock: ReturnType<typeof mock.clock> }
+
+function switching(on: On, transcript: SessionMessage[]): Switch {
+  const w: Switch = { transcript, id: 'session-1', contexts: [], clock: mock.clock(on) }
+  on('session.messages', async () => ({ value: w.transcript }))
+  on('session.id', async () => ({ value: w.id }))
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
+  on('tool.register', async () => ({ value: undefined }))
+  on('command.register', async () => ({ value: undefined }))
+  on('tool.call', async () => ({ result: undefined as never }))
+  on('audio.play', async () => ({ value: undefined }))
+  on('ui.toast', async () => ({ value: undefined }))
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  on('prompt.submit', async (_$, e) => {
+    w.contexts.push(e.context ?? [])
+    return { text: e.text, context: e.context }
+  })
+  on('ui.render', async () => <></>)
+  return w
+}
+
+async function footerLabel($: Engine): Promise<unknown> {
+  const mode = await $.ui.mount({ plugin: 'session-hub', surface: 'desktop', component: 'SessionMode', props: { modes: [] } })
+  const label = (await mode.find({ type: 'Button', key: 'hub-toggle' }))?.props.label
+  await mode.unmount()
+  return label
+}
+
+const openBarsLine = (context: readonly string[] | undefined) => (context ?? []).find(entry => entry.startsWith('plan-progress open bars:'))
+
+describe('bars across /clear and /resume', () => {
+  test('/clear drops the bars of the conversation it ended: no footer count, no open-bars line, no update', async ($, on) => {
+    const w = switching(on, [said('do it')])
+    await start($)
+    await $.tool.call({ tool: TOOL, ...TASK })
+    expect(await footerLabel($)).toBe('Progress 1')
+
+    await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } } as never)
+    w.id = 'session-2'
+    w.transcript = []
+    await $.prompt.submit({ text: 'new topic', wait: false, origin: { kind: 'composer' } })
+    await $.turn.start({ text: 'new topic', turnId: 'turn-1' })
+
+    expect(await footerLabel($)).toBe('Mods')
+    expect(openBarsLine(w.contexts.at(-1))).toBeUndefined()
+    expect(isRefused(await advance($, 'task'))).toBe(true)
+  })
+
+  test('/resume swaps the old bars for the ones the resumed transcript left, without waiting for a prompt', async ($, on) => {
+    const w = switching(on, [said('do it')])
+    await start($)
+    await $.tool.call({ tool: TOOL, ...TASK, id: 'old', title: 'Old' })
+
+    await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-2' } } as never)
+    w.transcript = [said('earlier'), called(barCall({ ...TASK, id: 'resumed', title: 'Resumed' }))]
+    await w.clock.advance(1000)
+    expect(await footerLabel($)).toBe('Mods')
+
+    w.id = 'session-2'
+    await w.clock.advance(1000)
+    expect(await footerLabel($)).toBe('Progress 1')
+    await $.prompt.submit({ text: 'carry on', wait: false, origin: { kind: 'composer' } })
+    expect(openBarsLine(w.contexts.at(-1))).toContain('resumed')
+    expect(openBarsLine(w.contexts.at(-1))).not.toContain('old')
+    expect(isRefused(await advance($, 'old'))).toBe(true)
+    expect((await advance($, 'resumed')).result).toContain('resumed: 1/2, running')
+  })
+
+  test('a resume replays at the next turn when no tick ran in between', async ($, on) => {
+    const w = switching(on, [said('do it')])
+    await start($)
+    await $.tool.call({ tool: TOOL, ...TASK, id: 'old', title: 'Old' })
+
+    await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-2' } } as never)
+    w.id = 'session-2'
+    w.transcript = [said('earlier'), called(barCall({ ...TASK, id: 'resumed', title: 'Resumed' }))]
+    await $.turn.start({ text: 'carry on', turnId: 'turn-1' })
+
+    expect(isRefused(await advance($, 'old'))).toBe(true)
+    expect((await advance($, 'resumed')).result).toContain('resumed: 1/2, running')
+  })
+
+  test('an exit keeps the bars, so a process that resumes the same conversation replays them', async ($, on) => {
+    switching(on, [said('do it')])
+    await start($)
+    await $.tool.call({ tool: TOOL, ...TASK })
+    await $.session.end({ reason: 'prompt_input_exit', sessionId: 'session-1', resume: { id: 'session-1' } } as never)
+
+    expect(await footerLabel($)).toBe('Progress 1')
+  })
+})
