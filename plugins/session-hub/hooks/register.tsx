@@ -1212,7 +1212,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
             {Svg ? (
               <Box key={`chevron-box-${p.id}`} position="relative" flexShrink={0}>
                 <Svg key={`chevron-mark-${p.id}`} source={chevronSvg(isWide)} alt={isWide ? 'Fold' : 'Open'} width={CHEVRON} height={CHEVRON} />
-                <Box key={`chevron-hit-${p.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch">
+                <Box key={`chevron-hit-${p.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
                   <Button key={`chevron-${p.id}`} plain label={CHEVRON_FILL} onPress={toggle} />
                 </Box>
               </Box>
@@ -3480,7 +3480,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
         {sections.map((s, i) => (
           <Box key={`rail-cell-${s.id}`} position="relative" flexDirection="row" justifyContent="center" minWidth={RAIL_COLUMNS} flexShrink={0}>
             <Svg source={railCellSvg(s.path, s.id === current, infos[i]?.badge ?? null)} alt={s.title} width={RAIL_W} height={RAIL_CELL_H} />
-            <Box key={`rail-hit-${s.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch">
+            <Box key={`rail-hit-${s.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
               <Button key={`rail-${s.id}`} plain label={RAIL_FILL} onPress={() => pickSection($, s.id)} />
             </Box>
           </Box>
