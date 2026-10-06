@@ -151,6 +151,8 @@ const PURPLE = '#8B7CF6'
 const RED = '#E5484D'
 const QUIET = '#8A8984'
 const HOVER_BG = '#8080801f'
+const TEXT_INK: Record<string, string> = { [GREEN]: 'success', [ORANGE]: 'warning' }
+const ink = (color: string) => TEXT_INK[color] ?? color
 const ROW_FILL_CHAR = ' '
 const ROW_FILL_PER_COLUMN = 3.5
 
@@ -1197,7 +1199,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
   const stepRow = (item: Timed, key: string, depth: number, tint: string, times: Times) => {
     const isLive = item.status === 'active' || item.status === 'error'
     const took = shownTime(times.items.get(item) ?? '', now)
-    const glyph = item.status === 'pending' ? <Text dimColor>{STEP_GLYPH.pending}</Text> : <Text color={stepColor(item.status, tint)}>{STEP_GLYPH[item.status]}</Text>
+    const glyph = item.status === 'pending' ? <Text dimColor>{STEP_GLYPH.pending}</Text> : <Text color={ink(stepColor(item.status, tint))}>{STEP_GLYPH[item.status]}</Text>
 
     return (
       <Box key={key} flexDirection="row" gap={1} marginLeft={depth * 2} minWidth={0}>
@@ -1228,7 +1230,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
       </Box>,
       ...agents.map(a => (
         <Box key={`agent-${p.id}-${a.id}`} flexDirection="row" gap={1} marginLeft={a.depth * 2} minWidth={0}>
-          <Text color={AGENT_COLOR[a.state]}>{AGENT_GLYPH[a.state]}</Text>
+          <Text color={ink(AGENT_COLOR[a.state])}>{AGENT_GLYPH[a.state]}</Text>
           <Box flexGrow={1} minWidth={0}>
             <Text dimColor={a.state === 'done'} wrap="truncate">
               {a.title}
@@ -1263,7 +1265,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
         {p.note
           ? [
               <Box key={`note-${p.id}`} paddingX={1} marginTop={1} backgroundColor={`${color}26`}>
-                <Text color={color} wrap="wrap">
+                <Text color={ink(color)} wrap="wrap">
                   {p.note}
                 </Text>
               </Box>,
@@ -1314,10 +1316,10 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const isAlert = p.state === 'needs_input' || p.state === 'error'
     const toggle = () => toggleBubble($, p.id)
     const took = shortSpan(endOf(p, now) - p.startedAt)
-    const mark = isCompact || !Svg ? <Text color={color}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planRingSvg(p, pct)} alt={`${p.title} ${pct}% · ${STATE_WORD[p.state]}`} width={PLAN_RING} height={PLAN_RING} />
+    const mark = isCompact || !Svg ? <Text color={ink(color)}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planRingSvg(p, pct)} alt={`${p.title} ${pct}% · ${STATE_WORD[p.state]}`} width={PLAN_RING} height={PLAN_RING} />
     const right = isCompact ? clockTime(touchedAt(p)) : took
     const line = isAlert ? (
-      <Text key={`line-${p.id}`} color={color} wrap="truncate">
+      <Text key={`line-${p.id}`} color={ink(color)} wrap="truncate">
         {overview(p, w)}
       </Text>
     ) : (
@@ -1519,14 +1521,14 @@ async function progressBand($: EngineInterface, e: RenderInputOf<'AbovePrompt'>)
 
         return (
           <Box key={`bar-${p.id}`} flexDirection="row" alignItems="center" gap={1}>
-            <Text color={color}>{STATE_GLYPH[p.state]}</Text>
+            <Text color={ink(color)}>{STATE_GLYPH[p.state]}</Text>
             <Text wrap="truncate">{fit.title}</Text>
             {expandLabel === null ? [] : [<Button key="progress-expand" plain dimColor label={expandLabel} onPress={() => update($, isExpanded, wide => !wide)} />]}
             <Box flexGrow={1} />
             <Text>
-              <Text color={color}>{'━'.repeat(filled)}</Text>
+              <Text color={ink(color)}>{'━'.repeat(filled)}</Text>
               <Text dimColor>{'─'.repeat(fit.barCells - filled)}</Text>
-              <Text color={color}>{fit.tail}</Text>
+              <Text color={ink(color)}>{fit.tail}</Text>
             </Text>
             <Text dimColor>{`${String(pct).padStart(3, FIGURE_SPACE)}%`}</Text>
             <Button key={`close-${p.id}`} plain dimColor label="✕" onPress={() => hidePlan($, p.id)} />
@@ -2484,7 +2486,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     <Box key={key} flexDirection="column" flexGrow={1} paddingX={1} backgroundColor={DIVIDER} minWidth={0}>
       <Text dimColor>{name}</Text>
       {color ? (
-        <Text bold color={color}>
+        <Text bold color={ink(color)}>
           {value}
         </Text>
       ) : (
@@ -2495,7 +2497,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   )
   const legendItem = (key: string, text: string, color?: string) =>
     color ? (
-      <Text key={key} color={color}>
+      <Text key={key} color={ink(color)}>
         {text}
       </Text>
     ) : (
@@ -2506,7 +2508,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const cell = (key: string, width: number, text: string, color?: string) => (
     <Box key={key} width={width} flexShrink={1} minWidth={0} justifyContent="flex-end">
       {color ? (
-        <Text color={color} wrap="truncate">
+        <Text color={ink(color)} wrap="truncate">
           {text}
         </Text>
       ) : (
@@ -2532,12 +2534,12 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
         <Box flexGrow={1} minWidth={0}>
           <Text dimColor wrap="truncate">{`Last request · ${clockTime(last.at)}`}</Text>
         </Box>
-        <Text bold color={hitColor(hitOf(last))}>{`${hitOf(last)}%`}</Text>
+        <Text bold color={ink(hitColor(hitOf(last)))}>{`${hitOf(last)}%`}</Text>
       </Box>
       <Box key="cache-last-parts" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} minWidth={0}>
-        <Text color={READ_COLOR}>{`read ${tokens(last.read)}`}</Text>
+        <Text color={ink(READ_COLOR)}>{`read ${tokens(last.read)}`}</Text>
         <Text dimColor>·</Text>
-        <Text color={WRITE_COLOR}>{`wrote ${tokens(last.write)}`}</Text>
+        <Text color={ink(WRITE_COLOR)}>{`wrote ${tokens(last.write)}`}</Text>
         <Text dimColor>·</Text>
         <Text color={FRESH_COLOR}>{`new ${tokens(last.fresh)}`}</Text>
       </Box>
@@ -3474,23 +3476,23 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     return null
   }
 
-  const right = (c: CallEntry): RenderElement[] => {
+  const right = (c: CallEntry, n: number): RenderElement[] => {
     const text = endText(c)
     return text === null
       ? []
       : [
-          <Box key={`call-end-${c.id}`} flexShrink={0}>
+          <Box key={`call-end-${n}`} flexShrink={0}>
             {text}
           </Box>,
         ]
   }
 
   const row = (c: CallEntry, depth: number, isQuiet: boolean): RenderElement => {
-    shownCalls.push(c)
+    const n = shownCalls.push(c)
     const isLive = c.status === 'running'
     const isDim = isQuiet && !isLive
     const mark = (
-      <Box key={`call-mark-${c.id}`} flexShrink={0}>
+      <Box key={`call-mark-${n}`} flexShrink={0}>
         {Svg ? (
           <Svg source={ringSvg(c.kind, c.status, isQuiet)} alt={`${c.kind} ${c.status}`} width={RING} height={RING} />
         ) : (
@@ -3506,11 +3508,11 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
             {c.via === 'slash' ? `/${tail(c.name)}` : c.name}
           </Text>
         </Box>
-        {dot(`call-dot-${c.id}`, c.origin)}
+        {dot(`call-dot-${n}`, c.origin)}
         <Box flexGrow={1} flexShrink={2} minWidth={0}>
-          {c.description ? [<Text key={`call-desc-${c.id}`} dimColor wrap="truncate">{c.description}</Text>] : []}
+          {c.description ? [<Text key={`call-desc-${n}`} dimColor wrap="truncate">{c.description}</Text>] : []}
         </Box>
-        {right(c)}
+        {right(c, n)}
       </Box>
     )
   }
@@ -3587,9 +3589,9 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     </Box>
   )
   const fileRows = isFilesOpen
-    ? files.map(f => (
-        <Box key={`calls-file-${f.path}`} flexDirection="row" alignItems="center" gap={1} paddingX={1} minWidth={0}>
-          {dot(`calls-file-dot-${f.path}`, { scope: f.scope })}
+    ? files.map((f, i) => (
+        <Box key={`calls-file-${i}`} flexDirection="row" alignItems="center" gap={1} paddingX={1} minWidth={0}>
+          {dot(`calls-file-dot-${i}`, { scope: f.scope })}
           <Box flexGrow={1} minWidth={0}>
             <Text dimColor wrap="truncate-start">
               {shortPath(f.path, f.scope, cwd)}
@@ -3597,8 +3599,8 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
           </Box>
           {f.firstTurn > 0
             ? [
-                <Box key={`calls-file-turn-box-${f.path}`} flexShrink={0}>
-                  <Text key={`calls-file-turn-${f.path}`} color={f.firstTurn === freshTurn ? RUNNING_COLOR : undefined} dimColor={f.firstTurn !== freshTurn}>{`turn ${f.firstTurn}`}</Text>
+                <Box key={`calls-file-turn-box-${i}`} flexShrink={0}>
+                  <Text key={`calls-file-turn-${i}`} color={f.firstTurn === freshTurn ? RUNNING_COLOR : undefined} dimColor={f.firstTurn !== freshTurn}>{`turn ${f.firstTurn}`}</Text>
                 </Box>,
               ]
             : []}
@@ -3797,7 +3799,7 @@ export const register: Register = (on, options) => {
       c === null || color === undefined
         ? []
         : [
-            <Text key="hub-cache-dot" color={color}>
+            <Text key="hub-cache-dot" color={ink(color)}>
               {CACHE_DOT}
             </Text>,
           ]

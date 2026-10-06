@@ -107,12 +107,12 @@ describe('the cache countdown in the Desktop footer', () => {
     expect((await footer($))?.text).toBe('~1:00')
   })
 
-  test('the last minute turns the same orange as a waiting bar and a lapsed known lifetime the same red as a failed one', LONG_CLOCK, async ($, on) => {
+  test('the last minute turns the theme warning colour of waiting text and a lapsed known lifetime the same red as a failed one', LONG_CLOCK, async ($, on) => {
     const w = world(on, { ttl: '1h' })
     await $.session.start({ cwd: '/work' } as never)
     await step($, w, WARM)
     await w.clock.advance(59 * 60_000)
-    expect(await footer($)).toEqual({ text: '1:00', color: '#E09A1E', dim: false })
+    expect(await footer($)).toEqual({ text: '1:00', color: 'warning', dim: false })
 
     await w.clock.advance(60_000)
     expect(await footer($)).toEqual({ text: 'expired', color: '#E5484D', dim: false })
