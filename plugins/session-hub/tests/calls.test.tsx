@@ -344,6 +344,23 @@ describe('the Skills & agents section of Mod status', () => {
     expect(text).toContain('+2 last turn')
   })
 
+  test('keeps the turn label of a rule file on one line beside a long path', async ($, on) => {
+    world(on)
+    await warmTurn($)
+    await openCalls($)
+    await startTurn($, 'edit the form', 't1')
+    await $.classic.InstructionsLoaded({ file_path: 'C:\\Users\\tester\\.claude\\rules\\code-structure-and-naming-conventions.md', memory_type: 'User', load_reason: 'path_glob_match', trigger_file_path: 'C:\\work\\app\\src\\form.ts' } as never)
+    await nestedMemory($, 'C:\\Users\\tester\\.claude\\rules\\code-structure-and-naming-conventions.md')
+    const opener = await mountPane($)
+    await opener.press({ key: 'calls-files-toggle' })
+    await opener.unmount()
+    const ui = await mountPane($)
+    const boxes = (await ui.findAll({ type: 'Box' })).filter(box => String(box.key ?? '').startsWith('calls-file-turn-box-'))
+    await ui.unmount()
+    expect(boxes.length).toBeGreaterThan(0)
+    for (const box of boxes) expect(box.props.flexShrink).toBe(0)
+  })
+
   test('counts a file a resumed transcript still carries as earlier context, not as this turn', async ($, on) => {
     world(on)
     await warmTurn($)

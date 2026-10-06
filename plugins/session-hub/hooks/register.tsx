@@ -3398,7 +3398,13 @@ async function callsSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
               {shortPath(f.path, f.scope, cwd)}
             </Text>
           </Box>
-          {f.firstTurn > 0 ? [<Text key={`calls-file-turn-${f.path}`} color={f.firstTurn === freshTurn ? RUNNING_COLOR : undefined} dimColor={f.firstTurn !== freshTurn}>{`turn ${f.firstTurn}`}</Text>] : []}
+          {f.firstTurn > 0
+            ? [
+                <Box key={`calls-file-turn-box-${f.path}`} flexShrink={0}>
+                  <Text key={`calls-file-turn-${f.path}`} color={f.firstTurn === freshTurn ? RUNNING_COLOR : undefined} dimColor={f.firstTurn !== freshTurn}>{`turn ${f.firstTurn}`}</Text>
+                </Box>,
+              ]
+            : []}
         </Box>
       ))
     : []
