@@ -112,6 +112,13 @@ async function svgSource($: Engine, alt: string, props: Partial<typeof PANE_PROP
   return svg === undefined ? undefined : String(svg.props.source)
 }
 
+async function detailShown($: Engine, id: string): Promise<boolean> {
+  const ui = await pane($)
+  const detail = await ui.find({ type: 'Box', key: `detail-${id}` })
+  await ui.unmount()
+  return detail !== undefined
+}
+
 async function press($: Engine, key: string) {
   const ui = await pane($)
   await ui.press({ key })
@@ -657,11 +664,13 @@ describe('when the Progress pane opens and closes', () => {
     expect(w.closes.length).toBeLessThanOrEqual(1)
   })
 
-  test('/progress-demo opens the pane, also when the demo bar is already there', async ($, on) => {
+  test('/progress-demo opens the pane on its sample bar, also when the demo bar is already there', async ($, on) => {
     const w = world(on)
     const demo = () => $.command.run({ command: 'progress-demo', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
-    await demo()
+    expect((await demo()).text).toBe('Sample plan shown.')
     expect([...w.panes]).toEqual([PANE])
+    expect(await rows($)).toEqual(['demo'])
+    expect(await texts($)).toContain('Orders module')
 
     await pressFooter($)
     await demo()
@@ -671,10 +680,40 @@ describe('when the Progress pane opens and closes', () => {
   test('/progress-clear empties the Progress section and leaves the pane up', async ($, on) => {
     const w = world(on)
     await create($, 'task')
-    await $.command.run({ command: 'progress-clear', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
+    const cleared = await $.command.run({ command: 'progress-clear', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
 
+    expect(cleared.text).toBe('Progress bars removed.')
     expect([...w.panes]).toEqual([PANE])
     expect(await texts($)).toContain('No progress bars yet. One appears when Claude starts a task with several steps.')
+  })
+
+  test('a bar made again under an id that was open before /progress-clear starts closed', async ($, on) => {
+    world(on)
+    await create($, 'task')
+    await press($, 'toggle-task')
+    expect(await detailShown($, 'task')).toBe(true)
+    await $.command.run({ command: 'progress-clear', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
+
+    await create($, 'task')
+    expect(await detailShown($, 'task')).toBe(false)
+  })
+
+  test('/progress with no bar says how to see a sample instead of opening anything', async ($, on) => {
+    const w = world(on)
+    const shown = await $.command.run({ command: 'progress', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
+
+    expect(shown.text).toBe('No plan yet. /progress-demo shows a sample.')
+    expect(w.opens).toEqual([])
+  })
+
+  test('/session shows the Mod status pane, then hides it, and says which', async ($, on) => {
+    const w = world(on)
+    const session = () => $.command.run({ command: 'session', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
+
+    expect((await session()).text).toBe('Mod status pane shown.')
+    expect([...w.panes]).toEqual([PANE])
+    expect((await session()).text).toBe('Mod status pane hidden.')
+    expect([...w.panes]).toEqual([])
   })
 
   test('a session start opens the pane again when it went away, as after a reload', async ($, on) => {
@@ -726,7 +765,8 @@ describe('what a row says', () => {
     world(on)
     await create($, 'finished')
     await finish($, 'finished')
-    if (!(await texts($)).some(one => one.startsWith('Started '))) await press($, 'toggle-finished')
+    expect(await detailShown($, 'finished')).toBe(false)
+    await press($, 'toggle-finished')
     const all = await texts($)
 
     expect(all.some(one => /^Started \d\d:\d\d · done \d\d:\d\d/.test(one))).toBe(true)

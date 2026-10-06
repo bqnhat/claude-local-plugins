@@ -4,6 +4,7 @@ import type { Engine } from 'claude-code/testing'
 
 const RULES_HEAD = '# Progress bars'
 const TOOL = 'mcp__session-hub__plan_progress'
+const OPEN_BARS = 'plan-progress open bars:'
 const KEPT = [{ role: 'user' as const, text: 'summary', toolUses: [] }]
 
 type World = { contexts: (readonly string[])[] }
@@ -108,7 +109,28 @@ describe('rules delivery', () => {
     await submit($, 'second')
 
     expect(w.contexts.map(rulesIn)).toEqual([1, 0])
-    expect(w.contexts[0]?.some(entry => entry.startsWith('plan-progress open bars: ship'))).toBe(true)
-    expect(w.contexts[1]?.some(entry => entry.startsWith('plan-progress open bars: ship'))).toBe(true)
+    expect(w.contexts[0]?.filter(entry => entry.startsWith(OPEN_BARS))).toEqual([`${OPEN_BARS} ship (Build 1/1)`])
+    expect(w.contexts[1]).toEqual([`${OPEN_BARS} ship (Build 1/1)`])
+  })
+
+  test('the open-bars line leaves finished bars out and rides only prompts the person typed', async ($, on) => {
+    const w = world(on)
+    mock.clock(on)
+    await $.tool.call({ tool: TOOL, id: 'ship', title: 'Ship', stages: [{ name: 'Build', steps: [{ title: 'Compile', status: 'active' }, { title: 'Link', status: 'pending' }] }] })
+    await $.tool.call({ tool: TOOL, id: 'old', title: 'Old', stages: [{ name: 'Done', steps: [{ title: 'All', status: 'active' }] }] })
+    await $.tool.call({ tool: TOOL, id: 'old', state: 'done' })
+    await submit($, 'first')
+    await submit($, 'from the sdk', { kind: 'sdk' })
+
+    expect(w.contexts[0]?.filter(entry => entry.startsWith(OPEN_BARS))).toEqual([`${OPEN_BARS} ship (Build 1/2)`])
+    expect(w.contexts[1]).toEqual([])
+  })
+
+  test('the rules name every short update and the waiting state the tool understands', async ($, on) => {
+    const w = world(on)
+    await submit($, 'first')
+    const rules = w.contexts[0]?.find(entry => entry.startsWith(RULES_HEAD)) ?? ''
+
+    for (const phrase of ['{id, next:true}', 'done:[', 'active:', 'failed:', 'state "needs_input"', 'kind "todo"', 'Never describe the bars']) expect(rules).toContain(phrase)
   })
 })

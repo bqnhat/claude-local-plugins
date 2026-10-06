@@ -4,6 +4,7 @@ import type { Engine, MockClock } from 'claude-code/testing'
 
 const TOOL = 'mcp__session-hub__plan_progress'
 const PLUGIN = 'session-hub'
+const LONG_CLOCK = { timeoutMs: 15_000 }
 const USAGE: ModelUsage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 50_000, cache_creation_input_tokens: 100 }
 const PANE_PROPS = { title: 'Mod status', isFocused: false, bodyColumns: 60, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 30 }, view: {} }
 const TASK = { title: 'Task', stages: [{ name: 'Work', steps: [{ title: 'One', status: 'active' }, { title: 'Two', status: 'pending' }] }] }
@@ -62,7 +63,7 @@ async function minute($: Engine, w: World, seconds = 60): Promise<World> {
 }
 
 describe('redraws while nothing happens', () => {
-  test('a minute with a live bar and a warm cache redraws the footer once and the pane twice', async ($, on) => {
+  test('a minute with a live bar and a warm cache redraws the footer once and the pane twice', LONG_CLOCK, async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/work' } as never)
     await $.tool.call({ tool: TOOL, id: 'task', ...TASK })
@@ -73,7 +74,7 @@ describe('redraws while nothing happens', () => {
     expect(w.sectionReads).toBeLessThanOrEqual(2)
   })
 
-  test('a minute with an agent running redraws the pane every five seconds, not every second', async ($, on) => {
+  test('a minute with an agent running redraws the pane every five seconds, not every second', LONG_CLOCK, async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/work' } as never)
     await $.tool.call({ tool: TOOL, id: 'task', ...TASK })
@@ -85,7 +86,7 @@ describe('redraws while nothing happens', () => {
     expect(w.sectionReads).toBeLessThanOrEqual(13)
   })
 
-  test('once the cache has lapsed and nothing is live, ten idle minutes leave the cache state alone and draw nothing', async ($, on) => {
+  test('once the cache has lapsed and nothing is live, ten idle minutes leave the cache state alone and draw nothing', LONG_CLOCK, async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/work' } as never)
     await respond($)
@@ -97,7 +98,7 @@ describe('redraws while nothing happens', () => {
     expect(w.sectionReads).toBe(0)
   })
 
-  test('a response after the cache lapsed starts the countdown again', async ($, on) => {
+  test('a response after the cache lapsed starts the countdown again', LONG_CLOCK, async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/work' } as never)
     await respond($)
@@ -108,7 +109,7 @@ describe('redraws while nothing happens', () => {
     expect(w.footerDraws).toBe(1)
   })
 
-  test('an idle session asks for its surfaces at most once every ten seconds', async ($, on) => {
+  test('an idle session asks for its surfaces at most once every ten seconds', LONG_CLOCK, async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/work' } as never)
     await $.tool.call({ tool: TOOL, id: 'task', ...TASK })

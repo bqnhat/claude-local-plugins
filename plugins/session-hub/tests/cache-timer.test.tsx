@@ -3,6 +3,7 @@ import type { ModelUsage, On } from 'claude-code'
 import type { Engine, MockClock } from 'claude-code/testing'
 
 const PLUGIN = 'session-hub'
+const LONG_CLOCK = { timeoutMs: 15_000 }
 const WARM: ModelUsage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 50_000, cache_creation_input_tokens: 100 }
 const COLD: ModelUsage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 50_000 }
 
@@ -88,7 +89,7 @@ describe('the cache countdown in the Desktop footer', () => {
     expect((await footer($))?.text).toBe('~5m')
   })
 
-  test('the last minute turns the same orange as a waiting bar and a lapsed known lifetime the same red as a failed one', async ($, on) => {
+  test('the last minute turns the same orange as a waiting bar and a lapsed known lifetime the same red as a failed one', LONG_CLOCK, async ($, on) => {
     const w = world(on, { ttl: '1h' })
     await $.session.start({ cwd: '/work' } as never)
     await step($, w, WARM)
