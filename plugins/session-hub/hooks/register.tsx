@@ -151,7 +151,8 @@ const RULES = `# Progress bars
 Tasks needing more than ~3 edits or commands get a bar via ${TOOL}: create it once with the full breakdown (2-7 stages with short steps, or kind "todo" for one flat list; titles of at most 4 words, in the user's language), then update it with short calls only: {id, next:true} when the active step is finished, or {id, done:[...], active:"..."}, {id, failed:"...", note}. Send state "needs_input" with a note before asking the user to decide. Never describe the bars to the user.`
 
 type Raw = Record<string, unknown>
-const str = (v: unknown, max = 120) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '')
+const cut = (s: string, max: number) => (s.length > max ? [...s].slice(0, max).join('') : s)
+const str = (v: unknown, max = 120) => (typeof v === 'string' ? cut(v.replace(/\s+/g, ' ').trim(), max) : '')
 const status = (v: unknown): StepStatus => (STATUSES.includes(v as StepStatus) ? (v as StepStatus) : 'pending')
 const list = (v: unknown): Raw[] => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []) as Raw[]
 
@@ -161,7 +162,10 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 function applyOps(stages: PlanStage[], input: Raw): PlanStage[] {
   const next = stages.map(s => ({ ...s, steps: s.steps.map(st => ({ ...st })) }))
   const steps = next.flatMap(s => s.steps)
-  const find = (title: string) => steps.find(st => same(st.title, title))
+  const find = (title: string) => {
+    const named = steps.filter(st => same(st.title, title))
+    return named.find(st => st.status === 'active') ?? named.find(st => !isFinished(st.status)) ?? named[0]
+  }
   const complete = (st: PlanStep) => {
     st.status = 'done'
     st.substeps = st.substeps.map(finish)
@@ -251,6 +255,7 @@ function stampStages(stages: PlanStage[], prev: readonly PlanStage[], now: numbe
 function normalize(input: Raw, prev: Plan | null, now: number, id: string): Plan {
   const isPartial = list(input.stages).length === 0 && prev !== null
   const asked = input.state as PlanState
+  const kept = prev?.state === 'done' && !isPartial && asked !== 'done' ? null : prev
   const drawn: PlanStage[] = isPartial ? applyOps(prev.stages, input) : list(input.stages)
     .map(s => ({
       name: str(s.name, 80) || 'Stage',
@@ -262,7 +267,7 @@ function normalize(input: Raw, prev: Plan | null, now: number, id: string): Plan
     }))
     .filter(s => s.steps.length > 0) as PlanStage[]
   const given = asked === 'done' ? finishAll(drawn) : drawn
-  const stages = stampStages(given, prev?.stages ?? [], now)
+  const stages = stampStages(given, kept?.stages ?? [], now)
   const title = str(input.title, 80) || prev?.title || 'Plan'
   const steps = stages.flatMap(s => s.steps)
   const isAllDone = steps.length > 0 && steps.every(s => isFinished(s.status))
@@ -276,9 +281,9 @@ function normalize(input: Raw, prev: Plan | null, now: number, id: string): Plan
     stages,
     state,
     note: str(input.note, 160) || null,
-    startedAt: prev && prev.title === title ? prev.startedAt : now,
+    startedAt: kept && kept.title === title ? kept.startedAt : now,
     updatedAt: now,
-    ...(prev?.hidden ? { hidden: true } : {}),
+    ...(kept?.hidden ? { hidden: true } : {}),
     ...(prev?.agents ? { agents: prev.agents, agentsDoneAt: prev.agentsDoneAt ?? null } : {}),
   }
 }
@@ -314,7 +319,7 @@ function parsePlan(markdown: string, now: number): Plan | null {
     const li = line.match(/^(\s*)(\d+[.)]|[-*+])\s+(.*)$/)
     if (!li) continue
     const depth = Math.floor((li[1] ?? '').replace(/\t/g, '  ').length / 2)
-    const text = clean(li[3] ?? '').slice(0, 120)
+    const text = cut(clean(li[3] ?? ''), 120)
     if (!text) continue
     items.push({ depth, text })
     const stage = headed[headed.length - 1]
@@ -533,11 +538,13 @@ function play($: EngineInterface, name: 'decision' | 'error' | 'done') {
 }
 
 const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40) || 'plan'
+  cut(
+    s
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-|-$/g, ''),
+    40,
+  ) || 'plan'
 
 // adds or replaces one bar by id; keeps at most MAX_KEPT, dropping finished ones first
 // computed inside update() from the latest list, so concurrent writers (parallel agents) do not drop each other
@@ -566,7 +573,7 @@ async function putPlan($: EngineInterface, next: Plan) {
     return placeBar(list, next)
   })
   chime($, prev?.state, next.state)
-  if (!prev) {
+  if (!prev || (prev.hidden === true && next.hidden !== true)) {
     await update($, isOpen, () => true)
     await showSection($, 'progress')
   }
@@ -988,7 +995,7 @@ function registerProgress(on: On): void {
     agentHome.set(id, home)
     const run: AgentRun = {
       id,
-      title: (e.description || e.subagentType).slice(0, 60),
+      title: cut(e.description || e.subagentType, 60),
       state: 'running',
       tool: 'Starting',
       startedAt: now,
