@@ -177,6 +177,30 @@ describe('terminal renderer', () => {
     expect(w.submitted).toEqual([])
     expect(await ui.findAll({ type: 'Button' })).toHaveLength(4)
   })
+
+  test('a long label is shortened to the band width but stays whole when it fits, and still fills its draft', async ($, on) => {
+    const long = 'Rerun the whole integration suite on Windows'
+    const w = world(on, forkReply([entry(long, 'rerun the integration suite on windows')]))
+    await completeTurn($, w)
+    const labelAt = async (bodyColumns: number) => {
+      const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { ...BAND_PROPS, bodyColumns } })
+      const label = String((await ui.findAll({ type: 'Button' }))[0]?.props.label)
+      await ui.unmount()
+      return label
+    }
+
+    for (const bodyColumns of [30, 40]) {
+      const label = await labelAt(bodyColumns)
+      expect(label.endsWith('…')).toBe(true)
+      expect([...label].length + 1 + 2 + 2).toBeLessThanOrEqual(bodyColumns)
+    }
+    expect(await labelAt(80)).toBe(`✓ ${long}`)
+    expect(await labelAt(160)).toBe(`✓ ${long}`)
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { ...BAND_PROPS, bodyColumns: 30 } })
+    await ui.press({ key: `✓ ${long}` })
+    expect(w.filled).toEqual([{ text: 'rerun the integration suite on windows', mode: 'replace' }])
+  })
 })
 
 const PANE_PROPS = {

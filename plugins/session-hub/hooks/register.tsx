@@ -1351,6 +1351,28 @@ async function progressFooter($: EngineInterface, e: RenderInputOf<'SessionMode'
   )
 }
 
+const BAND_BAR_MAX = 25
+const BAND_BAR_SOFT_MIN = 12
+const BAND_BAR_MIN = 5
+const BAND_TITLE_MIN = 10
+const BAND_STAGE_MIN = 3
+
+function fitBandRow(columns: number, title: string, stage: string, counts: string, expandLabel: string | null): { title: string; barCells: number; tail: string } {
+  const fixed = 1 + 4 + 1 + (expandLabel === null ? 5 : 6 + labelWidth([...expandLabel]))
+  const room = columns - fixed
+  const titleWidth = labelWidth([...title])
+  const titleFloor = Math.min(titleWidth, BAND_TITLE_MIN)
+  const countsWidth = counts.length + 1
+  const stageWidth = labelWidth([...stage])
+  const tailWidth = countsWidth + (stageWidth === 0 ? 0 : stageWidth + 1)
+  const roomyBar = Math.max(BAND_BAR_SOFT_MIN, Math.min(BAND_BAR_MAX, room - titleWidth - tailWidth))
+  const barCells = room - roomyBar - tailWidth >= titleFloor ? roomyBar : Math.max(BAND_BAR_MIN, room - titleFloor - tailWidth)
+  const stageRoom = room - titleFloor - barCells - countsWidth - 1
+  const shownStage = stageWidth === 0 || stageRoom < BAND_STAGE_MIN ? '' : fitLabel(stage, stageRoom)
+  const tail = shownStage === '' ? ` ${counts}` : ` ${shownStage} ${counts}`
+  return { title: fitLabel(title, Math.max(1, room - barCells - labelWidth([...tail]))), barCells, tail }
+}
+
 async function progressBand($: EngineInterface, e: RenderInputOf<'AbovePrompt'>): Promise<RenderElement | null> {
   if (e.surface === 'desktop' && (await read($, paneState)) !== 'unplaced') return null
   const shown = (await read($, plans)).filter(isDrawn).slice(-MAX_BARS)
@@ -1366,21 +1388,20 @@ async function progressBand($: EngineInterface, e: RenderInputOf<'AbovePrompt'>)
         const w = where(p)
         const pct = percent(p, w)
         const color = STATE_COLOR[p.state]
-        const stageName = p.stages[w.stage]?.name ?? ''
-        const bar = `${'━'.repeat(Math.round(pct / 4))}${'─'.repeat(25 - Math.round(pct / 4))}`
+        const expandLabel = i === 0 && shown.length > 1 ? (isWide ? '▴' : `+${shown.length - 1}`) : null
+        const fit = fitBandRow(e.props.bodyColumns || 40, p.title, p.stages[w.stage]?.name ?? '', `${w.step}/${w.stageSize}`, expandLabel)
+        const filled = Math.round((pct * fit.barCells) / 100)
 
         return (
           <Box key={`bar-${p.id}`} flexDirection="row" alignItems="center" gap={1}>
             <Text color={color}>{STATE_GLYPH[p.state]}</Text>
-            <Text wrap="truncate">{p.title}</Text>
-            {i === 0 && shown.length > 1
-              ? [<Button key="progress-expand" plain dimColor label={isWide ? '▴' : `+${shown.length - 1}`} onPress={() => update($, isExpanded, wide => !wide)} />]
-              : []}
+            <Text wrap="truncate">{fit.title}</Text>
+            {expandLabel === null ? [] : [<Button key="progress-expand" plain dimColor label={expandLabel} onPress={() => update($, isExpanded, wide => !wide)} />]}
             <Box flexGrow={1} />
             <Text>
-              <Text color={color}>{bar.replace(/─/g, '')}</Text>
-              <Text dimColor>{bar.replace(/━/g, '')}</Text>
-              <Text color={color}>{` ${stageName} ${w.step}/${w.stageSize}`}</Text>
+              <Text color={color}>{'━'.repeat(filled)}</Text>
+              <Text dimColor>{'─'.repeat(fit.barCells - filled)}</Text>
+              <Text color={color}>{fit.tail}</Text>
             </Text>
             <Text dimColor>{`${String(pct).padStart(3, FIGURE_SPACE)}%`}</Text>
             <Button key={`close-${p.id}`} plain dimColor label="✕" onPress={() => hidePlan($, p.id)} />
@@ -1856,6 +1877,8 @@ function fillDraft($: EngineInterface, prompt: string): void {
   )
 }
 
+const BAND_LABEL_INSET = 5
+
 function terminalBand(
   $: EngineInterface,
   e: RenderInputOf<'AbovePrompt', 'terminal'>,
@@ -1876,6 +1899,7 @@ function terminalBand(
   }
 
   const items = shown.items
+  const room = Math.max(LABEL_MIN, (e.props.bodyColumns || 40) - BAND_LABEL_INSET)
   return (
     <Box flexDirection="column">
       {below}
@@ -1884,9 +1908,10 @@ function terminalBand(
       {items.map((item, index) => (
         <Box key={`s${index}`} marginLeft={2}>
           <Button
+            key={kindLabel(item)}
             hotkey={String(index + 1)}
             plain
-            label={kindLabel(item)}
+            label={fitLabel(kindLabel(item), room)}
             onPress={() => fillDraft($, item.prompt)}
           />
         </Box>
@@ -3497,7 +3522,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
   const activeInfo = infos[sections.indexOf(active)]
   const body = await drawSection($, active.id, inner)
   const header = (
-    <Box key="hub-header" flexDirection="row" alignItems="center" paddingX={1} marginBottom={1} minWidth={0}>
+    <Box key="hub-header" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} paddingX={1} marginBottom={1} minWidth={0}>
       <Text dimColor>{active.title}</Text>
       <Box flexGrow={1} />
       <Text dimColor>{activeInfo?.meta ?? ''}</Text>
@@ -3507,7 +3532,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
   if (!Svg) {
     return (
       <Box flexDirection="column">
-        <Box key="hub-tabs" flexDirection="row" gap={2} paddingX={1} marginBottom={1}>
+        <Box key="hub-tabs" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} marginBottom={1} minWidth={0}>
           {sections.map(s => (
             <Button key={`rail-${s.id}`} plain dimColor={s.id !== current} label={s.title} onPress={() => pickSection($, s.id)} />
           ))}
