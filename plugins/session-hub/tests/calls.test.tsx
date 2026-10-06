@@ -344,6 +344,19 @@ describe('the Skills & agents section of Mod status', () => {
     expect(text).toContain('+2 last turn')
   })
 
+  test('folds the long project folder of a memory file so its file name stays readable', async ($, on) => {
+    world(on)
+    await warmTurn($)
+    await openCalls($)
+    await $.classic.InstructionsLoaded({ file_path: 'C:\\Users\\tester\\.claude\\projects\\C--Users-tester-work-app\\memory\\MEMORY.md', memory_type: 'User', load_reason: 'session_start' } as never)
+    const opener = await mountPane($)
+    await opener.press({ key: 'calls-files-toggle' })
+    await opener.unmount()
+    const text = await paneText($)
+    expect(text).toContain('~/.claude/projects/…/memory/MEMORY.md')
+    expect(text).not.toContain('C--Users-tester-work-app')
+  })
+
   test('keeps the turn label of a rule file on one line beside a long path', async ($, on) => {
     world(on)
     await warmTurn($)

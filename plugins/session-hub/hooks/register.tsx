@@ -2719,7 +2719,8 @@ function shortPath(path: string, scope: OriginScope, cwd: string): string {
   const home = /^(?:[A-Za-z]:)?\/(?:Users|home)\/[^/]+/i.exec(p)?.[0]
   const root = cwd.replace(/\\/g, '/').replace(/\/$/, '')
   if (scope !== 'personal' && scope !== 'memory' && root && p.toLowerCase().startsWith(`${root.toLowerCase()}/`)) return `./${p.slice(root.length + 1)}`
-  return home ? `~${p.slice(home.length)}` : p
+  const short = home ? `~${p.slice(home.length)}` : p
+  return short.replace(/\/\.claude\/projects\/[^/]+\//, '/.claude/projects/…/')
 }
 
 function fileRank(file: LoadedFile): number {
