@@ -1120,7 +1120,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
       <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={DETAIL_INDENT} marginRight={1} marginBottom={1} minWidth={0}>
         <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" minWidth={0}>
           <Box flexGrow={1} minWidth={0}>
-            <Text dimColor wrap="truncate">{`Started ${clockTime(p.startedAt)}${took ? ` · ${took}` : ''}`}</Text>
+            <Text dimColor wrap="truncate">{`Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${took ? ` · ${took}` : ''}`}</Text>
           </Box>
           {p.hidden ? (
             <Button key={`close-${p.id}`} plain dimColor label="Show again" onPress={() => unhidePlan($, p.id)} />
@@ -1220,7 +1220,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
               <Button key={`chevron-${p.id}`} plain dimColor label={isWide ? '▾' : '▸'} onPress={toggle} />
             )}
           </Box>
-          {isCompact ? [] : [line]}
+          {isCompact || (isWide && p.state === 'done') ? [] : [line]}
         </Box>
         {isDesktop ? (
           <Box key={`hit-${p.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">

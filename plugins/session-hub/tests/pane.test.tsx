@@ -692,6 +692,17 @@ describe('what a row says', () => {
     expect(all.some(one => /^Done at \d\d:\d\d$/.test(one))).toBe(true)
   })
 
+  test('an opened finished bar says its start, end and length once, in its detail line', async ($, on) => {
+    world(on)
+    await create($, 'finished')
+    await finish($, 'finished')
+    if (!(await texts($)).some(one => one.startsWith('Started '))) await press($, 'toggle-finished')
+    const all = await texts($)
+
+    expect(all.some(one => /^Started \d\d:\d\d · done \d\d:\d\d/.test(one))).toBe(true)
+    expect(all.some(one => one.startsWith('Done at '))).toBe(false)
+  })
+
   test('the Agents row counts its agents, and its details list them', async ($, on) => {
     const { clock } = world(on)
     await clock.advance(1000)
