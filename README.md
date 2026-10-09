@@ -6,7 +6,7 @@ Function-hooks plugins ("mods") for [Claude Code](https://claude.com/claude-code
 
 | Plugin | Version | What it does |
 | --- | --- | --- |
-| [`session-hub`](plugins/session-hub) | `0.1.0-local.63` | **Recommended.** One "Mod status" pane with Progress bars, Next steps suggestions, the skills and agents called this session, and prompt-cache usage, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
+| [`session-hub`](plugins/session-hub) | `0.1.0-local.64` | **Recommended.** One "Mod status" pane with Progress bars, Next steps suggestions, the skills and agents called this session, and prompt-cache usage, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
 | [`plan-progress`](plugins/plan-progress) | `0.3.0-local.15` | Live plan progress bars with stages, steps, step times and sounds. Fork of [zycck/claude-mods](https://github.com/zycck/claude-mods) `plan-progress`. |
 | [`next-steps-desktop`](plugins/next-steps-desktop) | `1.0.0-desktop.15` | Up to three suggested next prompts after each turn. Fork of Anthropic's [`next-steps`](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps). |
 | [`cache-timer`](plugins/cache-timer) | `0.1.0-local.3` | A `Cache mm:ss` countdown in the Desktop footer showing how long the prompt cache stays warm. |
@@ -97,7 +97,7 @@ node tools/hub-preview/preview.mjs --shots
 node tools/hub-preview/preview.mjs --serve --watch
 ```
 
-The first writes `tools/hub-preview/out/index.html` and one PNG per sample and width into `out/shots` (Playwright's headless shell, Chrome or Edge; `--theme dark` for the dark theme). The second serves the gallery on `http://127.0.0.1:4720/` and reloads it whenever `hooks/register.tsx` or a fixture changes. `--only <name>` keeps matching samples, `--widths 44,76` sets the pane widths in columns, and `CLAUDE_BIN` points at a `claude` binary when the one on `PATH` is older than the desktop's. The HTML is an approximation of the desktop renderer: check the final result once in the real pane.
+The first writes `tools/hub-preview/out/index.html` and one PNG per sample and width into `out/shots` (Playwright's headless shell, Chrome or Edge; `--theme dark` for the dark theme). The second serves the gallery on `http://127.0.0.1:4720/` and reloads it whenever `hooks/register.tsx` or a fixture changes. `--only <name>` keeps matching samples, `--widths 42,76` sets the pane widths in columns, and `CLAUDE_BIN` points at a `claude` binary when the one on `PATH` is older than the desktop's. The HTML is an approximation of the desktop renderer: check the final result once in the real pane.
 
 This repository is the only place these plugins are developed. The former standalone repositories [`bqnhat/plan-progress`](https://github.com/bqnhat/plan-progress) and [`bqnhat/next-steps-desktop`](https://github.com/bqnhat/next-steps-desktop) are archived.
 

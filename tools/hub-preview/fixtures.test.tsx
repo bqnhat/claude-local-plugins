@@ -6,7 +6,7 @@ const TOOL = 'mcp__session-hub__plan_progress'
 const PLUGIN = 'session-hub'
 const PANE = 'session-hub'
 const MARK = '@@HUB_FIXTURE@@'
-const WIDTHS: number[] = [44, 76]
+const WIDTHS: number[] = [42, 76]
 
 type Usage = { read: number; write: number; fresh: number }
 type World = { clock: MockClock; usage: Usage; model: string; isPaneUp: boolean }

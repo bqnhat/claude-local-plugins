@@ -204,8 +204,8 @@ describe('light and dark themes', () => {
     await turn($, w, 2)
     await press($, 'rail-cache')
     const cache = await textColors($)
-    expect(cache.get('wrote 900')).toBe('warning')
-    expect(cache.get('read 40k')).toBe('success')
+    expect(cache.get('wrote 900')).toBe('#BA7517')
+    expect(cache.get('read 40k')).toBe('#1D9E75')
 
     const fixed = [...progress, ...cache].filter(([, color]) => color.startsWith('#'))
     expect(fixed.filter(([, color]) => contrast(color, LIGHT) < 3 || contrast(color, DARK) < 3)).toEqual([])

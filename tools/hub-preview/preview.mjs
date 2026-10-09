@@ -16,7 +16,7 @@ fixtures.test.tsx, without opening a Claude session.
   --plugin <dir>   plugin folder (default: plugins/session-hub)
   --out <dir>      output folder (default: tools/hub-preview/out)
   --claude <bin>   claude binary (default: $CLAUDE_BIN, else claude on PATH)
-  --widths <list>  body widths in columns (default: 44,76)
+  --widths <list>  body widths in columns (default: 42,76)
   --only <text>    keep the scenarios whose name contains <text>
   --shots          save one PNG per shot (Playwright headless shell, Chrome or Edge; $CHROME_BIN)
   --theme <name>   light (default) or dark, for --shots
@@ -26,7 +26,7 @@ fixtures.test.tsx, without opening a Claude session.
 `
 
 function parseArgs(argv) {
-  const o = { plugin: resolve(HERE, '../../plugins/session-hub'), out: join(HERE, 'out'), claude: process.env.CLAUDE_BIN || 'claude', widths: [44, 76], only: '', shots: false, theme: '', height: 1100, serve: 0, watch: false }
+  const o = { plugin: resolve(HERE, '../../plugins/session-hub'), out: join(HERE, 'out'), claude: process.env.CLAUDE_BIN || 'claude', widths: [42, 76], only: '', shots: false, theme: '', height: 1100, serve: 0, watch: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     const next = () => argv[++i]

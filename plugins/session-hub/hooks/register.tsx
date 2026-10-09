@@ -153,6 +153,7 @@ const PURPLE = '#8B7CF6'
 const RED = '#E5484D'
 const QUIET = '#8A8984'
 const DEEP_GREEN = { light: '#1E7A3D', dark: '#5CC483' }
+const NET_GREEN = { light: '#006300', dark: '#5CC483' }
 const DEEP_RED = { light: '#8E2626', dark: '#F28B86' }
 const DEEP_AMBER = { light: '#BA7517', dark: '#E8A548' }
 const DEEP_PURPLE = { light: '#4B3DB0', dark: '#B5A9FF' }
@@ -485,7 +486,7 @@ function planIconSvg(p: Plan, pct: number): string {
 const CHIP_H = 16
 
 function chipSvg(word: string, color: string): { source: string; width: number } {
-  const width = Math.ceil(textWidth(word, 12) + 14)
+  const width = Math.ceil(textWidth(word, 12) + 11)
   return {
     source: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${CHIP_H}" viewBox="0 0 ${width} ${CHIP_H}">${toneRule('.chip', 'fill', color)}<rect width="${width}" height="${CHIP_H}" rx="5" fill="${color}" fill-opacity=".22"/><text x="${width / 2}" y="12" ${SVG_FONT} font-size="12" text-anchor="middle" class="chip">${xmlText(word)}</text></svg>`,
     width,
@@ -1374,7 +1375,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
 
     return (
       <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={Svg ? 1 : DETAIL_INDENT} marginRight={1} marginTop={Svg ? 0.5 : 0} marginBottom={1} minWidth={0}>
-        <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" columnGap={1} minWidth={0}>
+        <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" columnGap={0.75} minWidth={0}>
           {Svg && chip ? [<Svg key={`chip-${p.id}`} source={chip.source} alt={STATE_CHIP[p.state]} width={chip.width} height={CHIP_H} />] : []}
           <Box flexGrow={1} minWidth={0}>
             <Text dimColor wrap="truncate">
@@ -2574,6 +2575,8 @@ const CHART_TURNS = 12
 const CHART_H = 116
 const READ_COLOR = GREEN
 const WRITE_COLOR = ORANGE
+const WRITE_FILL = '#EF9F27'
+const svgTone = (color: string) => (color === WRITE_COLOR ? WRITE_FILL : color)
 const FRESH_COLOR = '#7F77DD'
 const LOW_COLOR = RED
 const READ_TILE = { light: READ_COLOR, dark: '#3DC49A' }
@@ -2632,14 +2635,14 @@ function tileRowSvg(tiles: readonly TileSpec[], signs: readonly string[], W: num
   const H = Math.max(...laid.map(l => l.height))
   const tones = tiles.map((one, i) => (typeof one.color === 'string' ? null : { at: i, tone: one.color }))
   const styles = [
-    `.ink{fill:${INK.light}}.soft{fill:${SOFT_INK.light}}.good{fill:${DEEP_GREEN.light}}.card{fill:#80808007}${tones.map(v => (v ? `.v${v.at}{fill:${v.tone.light}}` : '')).join('')}`,
-    `.ink{fill:${INK.dark}}.soft{fill:${SOFT_INK.dark}}.good{fill:${DEEP_GREEN.dark}}.card{fill:#80808024}${tones.map(v => (v ? `.v${v.at}{fill:${v.tone.dark}}` : '')).join('')}`,
+    `.ink{fill:${INK.light}}.soft{fill:${SOFT_INK.light}}.good{fill:${NET_GREEN.light}}.muted{fill:#52514E}.card{fill:#80808007}${tones.map(v => (v ? `.v${v.at}{fill:${v.tone.light}}` : '')).join('')}`,
+    `.ink{fill:${INK.dark}}.soft{fill:${SOFT_INK.dark}}.good{fill:${NET_GREEN.dark}}.muted{fill:${SOFT_INK.dark}}.card{fill:#80808024}${tones.map(v => (v ? `.v${v.at}{fill:${v.tone.dark}}` : '')).join('')}`,
   ]
   let x = 0
   const parts: string[] = []
   laid.forEach(({ one, lines, height }, i) => {
     const top = (H - height) / 2
-    const words = one.isGood ? 'class="good"' : 'class="ink"'
+    const words = one.isGood ? 'class="good"' : 'class="muted"'
     const value = typeof one.color === 'string' ? `fill="${one.color}"` : `class="v${i}"`
     const card = one.isGood
       ? `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${tileW.toFixed(1)}" height="${height}" rx="${t.radius}" fill="${WARM_TINT}" fill-opacity=".27"/>`
@@ -2745,7 +2748,7 @@ const HIT_BAR_H = 4
 function hitBarSvg(pct: number): string {
   const W = HIT_BAR_W
   const H = HIT_BAR_H
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${Math.max(3, (pct / 100) * W).toFixed(1)}" height="${H}" rx="${H / 2}" fill="${hitColor(pct)}"/></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${Math.max(3, (pct / 100) * W).toFixed(1)}" height="${H}" rx="${H / 2}" fill="${svgTone(hitColor(pct))}"/></svg>`
 }
 
 const SWATCH: Record<'square' | 'line' | 'dot', { width: number; shape: (color: string) => string }> = {
@@ -2763,7 +2766,7 @@ function lastBarSvg(s: TokenSplit): string {
   const parts = (
     [
       [s.read, READ_COLOR],
-      [s.write, WRITE_COLOR],
+      [s.write, WRITE_FILL],
       [s.fresh, FRESH_COLOR],
     ] as [number, string][]
   ).filter(([v]) => v > 0)
@@ -2804,7 +2807,7 @@ function tokensChartSvg(turns: readonly CacheTurn[], W: number): string {
   const yp = (p: number) => base - (p / 100) * (base - top)
   const slot = (R - L) / turns.length
   const x = (i: number) => Math.round(L + (i + 0.5) * slot)
-  const bw = 2 * Math.round(Math.max(6, Math.min(22, slot * 0.42)) / 2)
+  const bw = 2 * Math.round(Math.max(6, Math.min(22, slot * 0.4)) / 2)
   const axis = axisOf(L, R, max, y)
   const right = [50, 100].map(p => svgText(R + 6, yp(p) + 3.5, `${p}%`, 'start')).join('')
   const bars = turns
@@ -2814,7 +2817,7 @@ function tokensChartSvg(turns: readonly CacheTurn[], W: number): string {
       const stack = (
         [
           [t.read, READ_COLOR],
-          [t.write, WRITE_COLOR],
+          [t.write, WRITE_FILL],
           [t.fresh, FRESH_COLOR],
         ] as [number, string][]
       )
@@ -2832,7 +2835,7 @@ function tokensChartSvg(turns: readonly CacheTurn[], W: number): string {
     .join('')
   const points = turns.map((t, i) => `${x(i).toFixed(1)},${yp(hitOf(t)).toFixed(1)}`).join(' ')
   const line = turns.length > 1 ? `<polyline fill="none" stroke="${AXIS_COLOR}" stroke-width="1.2" stroke-linejoin="round" points="${points}"/>` : ''
-  const dots = turns.map((t, i) => `<circle class="ring" cx="${x(i).toFixed(1)}" cy="${yp(hitOf(t)).toFixed(1)}" r="3.2" fill="${hitColor(hitOf(t))}" stroke-width="2" paint-order="stroke"/>`).join('')
+  const dots = turns.map((t, i) => `<circle class="ring" cx="${x(i).toFixed(1)}" cy="${yp(hitOf(t)).toFixed(1)}" r="2.5" fill="${svgTone(hitColor(hitOf(t)))}" stroke-width="2" paint-order="stroke"/>`).join('')
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${inkStyle}${RING_STYLE}${axis}${right}${bars}${line}${dots}</svg>`
 }
@@ -2859,7 +2862,7 @@ function savingsChartSvg(turns: readonly CacheTurn[], before: { read: number; wr
   const lastX = x(points.length - 1)
   const end = points[points.length - 1] ?? { read: 0, write: 0 }
   const area = `<polygon points="${x(0).toFixed(1)},${base} ${path('read')} ${lastX.toFixed(1)},${base}" fill="${READ_COLOR}" fill-opacity=".16"/>`
-  const lines = `<polyline fill="none" stroke="${READ_COLOR}" stroke-width="2" stroke-linejoin="round" points="${path('read')}"/><polyline fill="none" stroke="${WRITE_COLOR}" stroke-width="2" stroke-linejoin="round" points="${path('write')}"/>`
+  const lines = `<polyline fill="none" stroke="${READ_COLOR}" stroke-width="2" stroke-linejoin="round" points="${path('read')}"/><polyline fill="none" stroke="${WRITE_FILL}" stroke-width="2" stroke-linejoin="round" points="${path('write')}"/>`
   const label = (v: number, paint: string) => {
     const cy = y(v)
     return cy >= 17 ? svgText(lastX + 3, cy - 8, tokens(v), 'end', paint, ' font-weight="600"') : svgText(lastX - 7, Math.max(8, cy - 2), tokens(v), 'end', paint, ' font-weight="600"')
@@ -2867,7 +2870,7 @@ function savingsChartSvg(turns: readonly CacheTurn[], before: { read: number; wr
   const ends =
     `<circle cx="${lastX.toFixed(1)}" cy="${y(end.read).toFixed(1)}" r="4" fill="${READ_COLOR}"/>` +
     label(end.read, `fill="${READ_COLOR}"`) +
-    `<circle cx="${lastX.toFixed(1)}" cy="${y(end.write).toFixed(1)}" r="4" fill="${WRITE_COLOR}"/>` +
+    `<circle cx="${lastX.toFixed(1)}" cy="${y(end.write).toFixed(1)}" r="4" fill="${WRITE_FILL}"/>` +
     label(end.write, 'class="amber"')
   const labels = turns.map((t, i) => svgText(x(i), base + 12, String(t.turn), 'middle')).join('')
 
@@ -2948,7 +2951,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const cell = (key: string, o: { width: number; text: string; color?: string; isBold?: boolean; isLatest?: boolean; isStart?: boolean; isFixed?: boolean }) => (
     <Box key={key} width={o.width} flexGrow={o.isStart ? 0 : o.width} flexShrink={o.isFixed ? 0 : 1} minWidth={0} justifyContent={o.isStart ? 'flex-start' : 'flex-end'} paddingX={0.25} {...(o.isLatest ? { backgroundColor: LATEST_BG } : {})}>
       {o.color ? (
-        <Text color={ink(o.color)} bold={o.isBold} wrap="truncate">
+        <Text color={o.color} bold={o.isBold} wrap="truncate">
           {o.text}
         </Text>
       ) : (
@@ -2978,9 +2981,9 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
       </Box>
       <Box key="cache-last-parts" flexDirection="row" minWidth={0}>
         <Text wrap="truncate">
-          <Text color={ink(READ_COLOR)}>{`read ${tokens(last.read)}`}</Text>
+          <Text color={READ_COLOR}>{`read ${tokens(last.read)}`}</Text>
           <Text dimColor>{' · '}</Text>
-          <Text color={ink(WRITE_COLOR)}>{`wrote ${tokens(last.write)}`}</Text>
+          <Text color={DEEP_AMBER.light}>{`wrote ${tokens(last.write)}`}</Text>
           <Text dimColor>{' · '}</Text>
           <Text color={FRESH_COLOR}>{`new ${tokens(last.fresh)}`}</Text>
         </Text>
@@ -2991,11 +2994,11 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     </Box>
   )
 
-  const COLS = { turn: 4, steps: 4.5, read: 7.25, wrote: 7.25, fresh: 4, hit: 7.5 }
+  const COLS = { turn: 4, steps: 5, read: 7, wrote: 7, fresh: 4, hit: 7.5 }
   const tokensView = [
     <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={1.5} paddingX={1} marginTop={1} minWidth={0}>
       {legendItem('cache-legend-read', 'square', 'read', READ_COLOR)}
-      {legendItem('cache-legend-write', 'square', 'wrote', WRITE_COLOR)}
+      {legendItem('cache-legend-write', 'square', 'wrote', WRITE_FILL)}
       {legendItem('cache-legend-new', 'square', 'new', FRESH_COLOR)}
       {legendItem('cache-legend-hit', 'dot', 'hit', AXIS_COLOR)}
     </Box>,
@@ -3004,9 +3007,9 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
     </Box>,
     tiles('cache-tiles', [
       { label: 'Read', value: tokens(total.read), color: READ_TILE, dot: READ_COLOR },
-      { label: 'Wrote', value: tokens(total.write), color: DEEP_AMBER, dot: WRITE_COLOR },
+      { label: 'Wrote', value: tokens(total.write), color: DEEP_AMBER, dot: WRITE_FILL },
       { label: 'New', value: tokens(total.fresh), color: FRESH_TILE, dot: FRESH_COLOR },
-      { label: 'Hit', value: `${hitOf(total)}%`, color: toneOf(hitColor(hitOf(total))) },
+      { label: 'Hit', value: `${hitOf(total)}%`, color: hitOf(total) >= 90 ? NET_GREEN : toneOf(hitColor(hitOf(total))) },
     ]),
     <Box key="cache-totals-note" paddingX={1} marginTop={0.25}>
       <Text>{`Session · ${plural(turns.length, 'turn')} · ${plural(samples.length, 'request')}`}</Text>
@@ -3028,7 +3031,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
             {cell(`cache-turn-${one.turn}`, { width: COLS.turn, text: String(one.turn), isBold: true, isLatest, isStart: true, isFixed: true })}
             {cell(`cache-steps-${one.turn}`, { width: COLS.steps, text: String(one.steps), isLatest })}
             {cell(`cache-read-${one.turn}`, { width: COLS.read, text: tokens(one.read), color: READ_COLOR, isLatest })}
-            {cell(`cache-write-${one.turn}`, { width: COLS.wrote, text: tokens(one.write), color: WRITE_COLOR, isLatest })}
+            {cell(`cache-write-${one.turn}`, { width: COLS.wrote, text: tokens(one.write), color: DEEP_AMBER.light, isLatest })}
             {cell(`cache-new-${one.turn}`, { width: COLS.fresh, text: tokens(one.fresh), color: FRESH_COLOR, isLatest })}
             <Box key={`cache-hit-${one.turn}`} width={COLS.hit} flexGrow={COLS.hit} flexShrink={0} minWidth={0} flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={0.5} paddingX={0.25} {...(isLatest ? { backgroundColor: LATEST_BG } : {})}>
               <Svg source={hitBarSvg(pct)} alt={`${pct}% hit`} width={HIT_BAR_W} height={HIT_BAR_H} />
@@ -3049,7 +3052,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const savingsView = [
     <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={1.5} paddingX={1} marginTop={1} minWidth={0}>
       {legendItem('cache-legend-read', 'line', 'read tích lũy', READ_COLOR)}
-      {legendItem('cache-legend-write', 'line', 'written', WRITE_COLOR)}
+      {legendItem('cache-legend-write', 'line', 'written', WRITE_FILL)}
     </Box>,
     <Box key="cache-chart" paddingX={1} marginTop={0.5}>
       <Svg source={savingsChartSvg(shown, earlier, rowWidth)} alt={`Running totals: read ${tokens(total.read)}, written ${tokens(total.write)}`} width={rowWidth} height={CHART_H} />
@@ -3058,13 +3061,13 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
       'cache-tiles',
       [
         { label: 'Saved by reads', value: tokens(saved), color: READ_TILE, dot: READ_COLOR, sub: `read × ${readSaving}` },
-        { label: 'Extra writes', value: tokens(extra), color: DEEP_AMBER, dot: WRITE_COLOR, sub: `wrote × ${writeExtra}` },
-        { label: 'Net saved', value: tokens(net), color: DEEP_GREEN, sub: `≈ ${share}% input`, isGood: true },
+        { label: 'Extra writes', value: tokens(extra), color: DEEP_AMBER, dot: WRITE_FILL, sub: `wrote × ${writeExtra}` },
+        { label: 'Net saved', value: tokens(net), color: NET_GREEN, sub: `≈ ${share}% input`, isGood: true },
       ],
       ['−', '='],
     ),
     <Box key="cache-savings-note" paddingX={1} marginTop={0.25}>
-      <Text wrap="wrap">Input tokens at list-price ratios. Not your bill.</Text>
+      <Text dimColor wrap="wrap">Input tokens at list-price ratios. Not your bill.</Text>
     </Box>,
   ]
 
