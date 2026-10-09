@@ -166,7 +166,7 @@ describe('the Cache section of Mod status', () => {
     for (const box of turnCells) expect(box.props.flexShrink).toBe(0)
   })
 
-  test('the head keeps the cache time whole and lets the view tabs drop below it in a narrow pane', async ($, on) => {
+  test('the head holds only the view tabs and the cache lifetime moves to the footer of the pane', async ($, on) => {
     const w = world(on)
     await press($, 'rail-cache')
     await request($, w, 't1', { read: 1000, write: 0, fresh: 0 })
@@ -174,10 +174,33 @@ describe('the Cache section of Mod status', () => {
     const ui = await mountPane($)
     const head = await ui.find({ type: 'Box', key: 'cache-head' })
     const ttl = await ui.find({ type: 'Box', key: 'cache-head-ttl' })
+    const buttons = (await ui.findAll({ type: 'Button' })).map(b => String(b.key ?? ''))
     await ui.unmount()
     expect(head?.props.flexWrap).toBe('wrap')
-    expect(ttl?.props.flexShrink).toBe(0)
+    expect(ttl).toBeUndefined()
+    expect(buttons).toEqual(expect.arrayContaining(['cache-view-tokens', 'cache-view-savings']))
     expect((await texts($)).some(line => / cache( · |$)/.test(line) && line.includes('turn'))).toBe(false)
+  })
+
+  test('the footer counts the cache down under every section and says when it lapsed', async ($, on) => {
+    const w = world(on)
+    await press($, 'rail-progress')
+    expect(await texts($)).not.toContain('5m left')
+
+    await request($, w, 't1', { read: 1000, write: 500, fresh: 0 })
+    const warm = await texts($)
+    expect(['⏱ Cache warm · ~5m', '5m left', '1.5k cached'].filter(one => !warm.includes(one))).toEqual([])
+    expect(warm.some(line => line.startsWith('Expires '))).toBe(true)
+
+    await w.clock.advance(4 * 60_000 + 30_000)
+    const expiring = await texts($)
+    expect(['⏱ Cache expiring · ~5m', '<1m left'].filter(one => !expiring.includes(one))).toEqual([])
+
+    await w.clock.advance(60_000)
+    const expired = await texts($)
+    expect(expired).toContain('⏱ Cache expired · ~5m')
+    expect(expired.some(line => line.endsWith(' left'))).toBe(false)
+    expect(expired.some(line => line.startsWith('Expired '))).toBe(true)
   })
 
   test('Savings switches the view, works out what the cache saved, and the choice stays', async ($, on) => {

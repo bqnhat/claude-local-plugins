@@ -63,7 +63,7 @@ async function minute($: Engine, w: World, seconds = 60): Promise<World> {
 }
 
 describe('redraws while nothing happens', () => {
-  test('a minute with a live bar and a warm cache redraws the footer once and the pane twice', LONG_CLOCK, async ($, on) => {
+  test('a minute with a live bar and a warm cache redraws the footer once and the pane at most three times, one for the cache countdown', LONG_CLOCK, async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/work' } as never)
     await $.tool.call({ tool: TOOL, id: 'task', ...TASK })
@@ -71,7 +71,7 @@ describe('redraws while nothing happens', () => {
     await minute($, w)
 
     expect(w.footerDraws).toBeLessThanOrEqual(1)
-    expect(w.sectionReads).toBeLessThanOrEqual(2)
+    expect(w.sectionReads).toBeLessThanOrEqual(3)
   })
 
   test('a minute with an agent running redraws the pane every five seconds, not every second', LONG_CLOCK, async ($, on) => {

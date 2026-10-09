@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Args, CommandInfo, EngineInterface, ModelUsage, TurnUsage, On, Origin, Register, RenderElement, RenderInput, RenderInputOf } from 'claude-code'
 
-import type { AgentRun, CacheSample, CacheTtl, CallEntry, CallKind, CallOrigin, CallStatus, HubPaneState, HubSection, LiveTime, LoadedFile, OfferRecord, OriginScope, Plan, PlanStage, PlanState, PlanStep, PlanSubstep, ShownTime, SourceMap, StepStatus, Suggestion, SuggestionDetail, SuggestionKind, View } from '../types'
+import type { AgentRun, CacheSample, CacheTtl, CacheView, CallEntry, CallKind, CallOrigin, CallStatus, HubPaneState, HubSection, LiveTime, LoadedFile, OfferRecord, OriginScope, Plan, PlanStage, PlanState, PlanStep, PlanSubstep, ShownTime, SourceMap, StepStatus, Suggestion, SuggestionDetail, SuggestionKind, View } from '../types'
 
 const plans = atom({ plugin: 'session-hub', key: 'plans' } as const, [])
 const isOpen = atom({ plugin: 'session-hub', key: 'isOpen' } as const, true)
@@ -19,6 +19,7 @@ const openDetail = atom({ plugin: 'session-hub', key: 'openDetail' } as const, -
 const lastRequestAt = atom({ plugin: 'session-hub', key: 'lastRequestAt' } as const, null)
 const ttl = atom({ plugin: 'session-hub', key: 'ttl' } as const, null)
 const cacheLabel = atom({ plugin: 'session-hub', key: 'cacheLabel' } as const, '')
+const cacheClock = atom({ plugin: 'session-hub', key: 'cacheClock' } as const, '')
 const cacheSamples = atom({ plugin: 'session-hub', key: 'cacheSamples' } as const, [])
 const cacheView = atom({ plugin: 'session-hub', key: 'cacheView' } as const, 'tokens')
 
@@ -2343,6 +2344,8 @@ async function relabel($: EngineInterface): Promise<boolean> {
   const c = await readCache($)
   const label = c === null ? '' : cacheLabelOf(c)
   if ((await read($, cacheLabel)) !== label) await update($, cacheLabel, () => label)
+  const coarse = c === null ? '' : coarseLeftOf(c)
+  if ((await read($, cacheClock)) !== coarse) await update($, cacheClock, () => coarse)
   return c !== null && c.isWarm
 }
 
@@ -2379,6 +2382,11 @@ function cacheLabelOf(c: CacheReading): string {
   return `${c.isGuess ? '~' : ''}${left}`
 }
 
+function coarseLeftOf(c: CacheReading): string {
+  if (!c.isWarm) return 'expired'
+  return c.isWarning ? '<1m' : `${Math.ceil(c.left / 60_000)}m`
+}
+
 function cacheColor(c: CacheReading): string | undefined {
   if (c.isGuess) return undefined
   if (!c.isWarm) return EXPIRED_COLOR
@@ -2396,6 +2404,10 @@ const WRITE_COLOR = ORANGE
 const FRESH_COLOR = PURPLE
 const LOW_COLOR = RED
 const AXIS_COLOR = QUIET
+const TRACK_COLOR = '#8080802e'
+const TILE_BG = '#8080801a'
+const TAB_BG = '#80808033'
+const tint = (color: string) => `${color}24`
 const READ_SAVING = 0.9
 const READ_SAVING_BY_MODEL: readonly (readonly [string, number])[] = [
   ['claude-fable-5-1', 0.975],
@@ -2462,7 +2474,15 @@ function niceMax(v: number): number {
 const svgText = (x: number, y: number, text: string, anchor: 'start' | 'middle' | 'end', color = AXIS_COLOR) =>
   `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="10" font-family="sans-serif" text-anchor="${anchor}" fill="${color}">${text}</text>`
 
-const gridLine = (x1: number, x2: number, y: number) => `<line x1="${x1}" x2="${x2}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${AXIS_COLOR}" stroke-opacity=".25"/>`
+const gridLine = (x1: number, x2: number, y: number, isBase = false) =>
+  `<line x1="${x1}" x2="${x2}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${AXIS_COLOR}" stroke-opacity="${isBase ? '.45' : '.25'}"${isBase ? '' : ' stroke-dasharray="3 3"'}/>`
+
+const axisOf = (L: number, R: number, max: number, y: (v: number) => number) => [0, max / 2, max].map(v => gridLine(L, R, y(v), v === 0) + svgText(L - 6, y(v) + 3, tokens(v), 'end')).join('')
+
+function hitBarSvg(pct: number): string {
+  const W = 18
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="4" viewBox="0 0 ${W} 4"><rect width="${W}" height="4" rx="2" fill="${TRACK_COLOR}"/><rect width="${Math.max(2, (pct / 100) * W).toFixed(1)}" height="4" rx="2" fill="${hitColor(pct)}"/></svg>`
+}
 
 function lastBarSvg(s: TokenSplit, W: number): string {
   const total = Math.max(1, promptOf(s))
@@ -2477,7 +2497,7 @@ function lastBarSvg(s: TokenSplit, W: number): string {
   let x = 0
   const rects = shown.map(([v, c]) => {
     const w = Math.max(2, (v / total) * room)
-    const rect = `<rect x="${x.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="4" fill="${c}"/>`
+    const rect = `<rect x="${x.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="4" rx="2" fill="${c}"/>`
     x += w + gap
     return rect
   })
@@ -2495,12 +2515,14 @@ function tokensChartSvg(turns: readonly CacheTurn[], W: number): string {
   const yp = (p: number) => base - (p / 100) * (base - top)
   const slot = (R - L) / turns.length
   const x = (i: number) => L + (i + 0.5) * slot
-  const bw = Math.min(28, slot * 0.5)
-  const axis = [0, max / 2, max].map(v => gridLine(L, R, y(v)) + svgText(L - 6, y(v) + 3, tokens(v), 'end')).join('')
+  const bw = Math.min(24, slot * 0.45)
+  const axis = axisOf(L, R, max, y)
   const right = [0, 50, 100].map(p => svgText(R + 6, yp(p) + 3, `${p}%`, 'start')).join('')
   const bars = turns
     .map((t, i) => {
       let at = base
+      const barTop = y(promptOf(t))
+      const clip = `<clipPath id="bar-${i}"><rect x="${(x(i) - bw / 2).toFixed(1)}" y="${barTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(base - barTop + 4).toFixed(1)}" rx="3"/></clipPath>`
       const stack = (
         [
           [t.read, READ_COLOR],
@@ -2512,13 +2534,13 @@ function tokensChartSvg(turns: readonly CacheTurn[], W: number): string {
         .map(([v, c]) => {
           const h = Math.max(1, base - y(v))
           at -= h
-          return `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${at.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".45"/>`
+          return `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${at.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".85"/>`
         })
         .join('')
-      return stack + svgText(x(i), H - 4, String(t.turn), 'middle')
+      return `${clip}<g clip-path="url(#bar-${i})">${stack}</g>` + svgText(x(i), H - 4, String(t.turn), 'middle')
     })
     .join('')
-  const line = `<polyline fill="none" stroke="${AXIS_COLOR}" stroke-width="1.6" points="${turns.map((t, i) => `${x(i).toFixed(1)},${yp(hitOf(t)).toFixed(1)}`).join(' ')}"/>`
+  const line = `<polyline fill="none" stroke="${AXIS_COLOR}" stroke-width="1.2" points="${turns.map((t, i) => `${x(i).toFixed(1)},${yp(hitOf(t)).toFixed(1)}`).join(' ')}"/>`
   const dots = turns.map((t, i) => `<circle cx="${x(i).toFixed(1)}" cy="${yp(hitOf(t)).toFixed(1)}" r="3.5" fill="${hitColor(hitOf(t))}"/>`).join('')
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${axis}${right}${bars}${line}${dots}</svg>`
@@ -2541,7 +2563,7 @@ function savingsChartSvg(turns: readonly CacheTurn[], before: { read: number; wr
   const y = (v: number) => base - (v / max) * (base - top)
   const slot = (R - L) / turns.length
   const x = (i: number) => L + (i + 0.5) * slot
-  const axis = [0, max / 2, max].map(v => gridLine(L, R, y(v)) + svgText(L - 6, y(v) + 3, tokens(v), 'end')).join('')
+  const axis = axisOf(L, R, max, y)
   const path = (key: 'read' | 'write') => points.map((p, i) => `${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join(' ')
   const lastX = x(points.length - 1)
   const end = points[points.length - 1] ?? { read: 0, write: 0 }
@@ -2569,7 +2591,6 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const Svg = 'Svg' in t ? t.Svg : null
   const samples = await read($, cacheSamples)
   const view = await read($, cacheView)
-  const label = await read($, cacheLabel)
   const c = await readCache($)
   const columns = e.props.bodyColumns || 40
   const rowWidth = Math.min(1400, Math.max(160, (columns - 2) * 7))
@@ -2588,21 +2609,46 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const earlier = sumTokens(turns.slice(0, turns.length - shown.length))
   const total = sumTokens(turns)
   const last = samples[samples.length - 1]
-  const ttlName = c === null ? '' : c.ttlMs % 3_600_000 === 0 ? `${c.ttlMs / 3_600_000}h` : `${Math.round(c.ttlMs / 60_000)}m`
-  const left = label === '' ? '' : label === 'expired' || label === '?' ? ' · expired' : ` · ${label} left`
-  const pick = (next: 'tokens' | 'savings') => update($, cacheView, () => next)
+  const latest = shown[shown.length - 1]?.turn
+  const pick = (next: CacheView) => update($, cacheView, () => next)
+  const colored = (color: string | undefined) => (color === undefined ? {} : { color: ink(color) })
 
-  const tile = (key: string, name: string, value: string, color?: string, sub?: string) => (
-    <Box key={key} flexDirection="column" flexGrow={1} paddingX={1} backgroundColor={DIVIDER} minWidth={0}>
-      <Text dimColor>{name}</Text>
-      {color ? (
-        <Text bold color={ink(color)}>
-          {value}
-        </Text>
-      ) : (
-        <Text bold>{value}</Text>
-      )}
-      {sub ? [<Text key={`${key}-sub`} dimColor>{sub}</Text>] : []}
+  const tile = (key: string, o: { name: string; value: string; color?: string; dot?: string; sub?: string; background?: string }) => (
+    <Box key={key} flexDirection="column" flexGrow={1} flexShrink={1} paddingX={1} backgroundColor={o.background ?? TILE_BG} minWidth={0}>
+      <Box key={`${key}-name`} flexDirection="row" columnGap={1} minWidth={0}>
+        {o.dot === undefined
+          ? []
+          : [
+              <Text key={`${key}-dot`} color={ink(o.dot)}>
+                {CACHE_DOT}
+              </Text>,
+            ]}
+        {o.background === undefined ? (
+          <Text dimColor wrap="truncate">
+            {o.name}
+          </Text>
+        ) : (
+          <Text {...colored(o.color)} wrap="truncate">
+            {o.name}
+          </Text>
+        )}
+      </Box>
+      <Text bold {...colored(o.color)} wrap="truncate">
+        {o.value}
+      </Text>
+      {o.sub === undefined
+        ? []
+        : [
+            o.background === undefined ? (
+              <Text key={`${key}-sub`} dimColor wrap="truncate">
+                {o.sub}
+              </Text>
+            ) : (
+              <Text key={`${key}-sub`} {...colored(o.color)} wrap="truncate">
+                {o.sub}
+              </Text>
+            ),
+          ]}
     </Box>
   )
   const legendItem = (key: string, text: string, color?: string) =>
@@ -2615,10 +2661,10 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
         {text}
       </Text>
     )
-  const cell = (key: string, width: number, text: string, color?: string) => (
+  const cell = (key: string, width: number, text: string, color?: string, isBold = false) => (
     <Box key={key} width={width} flexShrink={1} minWidth={0} justifyContent="flex-end">
       {color ? (
-        <Text color={ink(color)} wrap="truncate">
+        <Text color={ink(color)} bold={isBold} wrap="truncate">
           {text}
         </Text>
       ) : (
@@ -2628,14 +2674,18 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
       )}
     </Box>
   )
+  const tab = (id: CacheView, label: string) => (
+    <Box key={`cache-tab-${id}`} paddingX={1} {...(view === id ? { backgroundColor: TAB_BG } : {})}>
+      <Button key={`cache-view-${id}`} plain dimColor={view !== id} label={label} onPress={() => pick(id)} />
+    </Box>
+  )
 
   const head = (
-    <Box key="cache-head" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={2} paddingX={1} minWidth={0}>
-      <Box key="cache-head-ttl" flexGrow={1} flexShrink={0}>
-        <Text dimColor>{`${ttlName} cache${left}`}</Text>
+    <Box key="cache-head" flexDirection="row" flexWrap="wrap" alignItems="center" paddingX={1} minWidth={0}>
+      <Box key="cache-tabs" flexDirection="row" backgroundColor={TILE_BG}>
+        {tab('tokens', 'Tokens')}
+        {tab('savings', 'Savings')}
       </Box>
-      <Button key="cache-view-tokens" plain dimColor={view !== 'tokens'} label="Tokens" onPress={() => pick('tokens')} />
-      <Button key="cache-view-savings" plain dimColor={view !== 'savings'} label="Savings" onPress={() => pick('savings')} />
     </Box>
   )
   const lastRow = (
@@ -2658,23 +2708,23 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   )
 
   const tokensView = [
-    <Box key="cache-chart" paddingX={1} marginTop={1}>
+    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} marginTop={1} minWidth={0}>
+      {legendItem('cache-legend-read', '■ read', READ_COLOR)}
+      {legendItem('cache-legend-write', '■ wrote', WRITE_COLOR)}
+      {legendItem('cache-legend-new', '■ new', FRESH_COLOR)}
+      {legendItem('cache-legend-hit', '● % hit')}
+    </Box>,
+    <Box key="cache-chart" paddingX={1}>
       <Svg source={tokensChartSvg(shown, rowWidth)} alt={`Tokens per turn and hit rate, turns ${shown[0]?.turn}–${shown[shown.length - 1]?.turn}`} width={rowWidth} height={CHART_H} />
     </Box>,
-    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} minWidth={0}>
-      {legendItem('cache-legend-read', '▮ read', READ_COLOR)}
-      {legendItem('cache-legend-write', '▮ wrote', WRITE_COLOR)}
-      {legendItem('cache-legend-new', '▮ new', FRESH_COLOR)}
-      {legendItem('cache-legend-hit', '— % hit')}
-    </Box>,
-    <Box key="cache-tiles" flexDirection="row" gap={1} paddingX={1} marginTop={1} minWidth={0}>
-      {tile('cache-total-read', 'Read', tokens(total.read), READ_COLOR)}
-      {tile('cache-total-write', 'Wrote', tokens(total.write), WRITE_COLOR)}
-      {tile('cache-total-new', 'New', tokens(total.fresh), FRESH_COLOR)}
-      {tile('cache-total-hit', 'Hit', `${hitOf(total)}%`)}
-    </Box>,
-    <Box key="cache-totals-note" paddingX={1}>
+    <Box key="cache-totals-note" paddingX={1} marginTop={1}>
       <Text dimColor>{`Session totals · ${plural(turns.length, 'turn')} · ${plural(samples.length, 'request')}`}</Text>
+    </Box>,
+    <Box key="cache-tiles" flexDirection="row" gap={1} paddingX={1} minWidth={0}>
+      {tile('cache-total-read', { name: 'Read', value: tokens(total.read), color: READ_COLOR, dot: READ_COLOR })}
+      {tile('cache-total-write', { name: 'Wrote', value: tokens(total.write), color: WRITE_COLOR, dot: WRITE_COLOR })}
+      {tile('cache-total-new', { name: 'New', value: tokens(total.fresh), color: FRESH_COLOR, dot: FRESH_COLOR })}
+      {tile('cache-total-hit', { name: 'Hit', value: `${hitOf(total)}%`, color: hitColor(hitOf(total)) })}
     </Box>,
     <Box key="cache-table" flexDirection="column" paddingX={1} marginTop={1} minWidth={0}>
       <Box key="cache-table-head" flexDirection="row" minWidth={0}>
@@ -2685,20 +2735,26 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
         {cell('cache-th-read', 9, 'Read')}
         {cell('cache-th-write', 9, 'Wrote')}
         {cell('cache-th-new', 8, 'New')}
-        {cell('cache-th-hit', 7, 'Hit')}
+        {cell('cache-th-hit', 11, 'Hit')}
       </Box>
-      {[...shown].reverse().map(one => (
-        <Box key={`cache-row-${one.turn}`} flexDirection="row" minWidth={0}>
-          <Box width={4} flexGrow={1} flexShrink={0}>
-            <Text>{String(one.turn)}</Text>
+      {[...shown].reverse().map(one => {
+        const isLatest = one.turn === latest
+        return (
+          <Box key={`cache-row-${one.turn}`} flexDirection="row" minWidth={0} {...(isLatest ? { backgroundColor: TILE_BG } : {})}>
+            <Box width={4} flexGrow={1} flexShrink={0}>
+              <Text bold={isLatest}>{String(one.turn)}</Text>
+            </Box>
+            {cell(`cache-steps-${one.turn}`, 7, String(one.steps))}
+            {cell(`cache-read-${one.turn}`, 9, tokens(one.read), READ_COLOR)}
+            {cell(`cache-write-${one.turn}`, 9, tokens(one.write), WRITE_COLOR)}
+            {cell(`cache-new-${one.turn}`, 8, tokens(one.fresh), FRESH_COLOR)}
+            <Box key={`cache-hit-${one.turn}`} width={11} flexShrink={1} minWidth={0} flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={1}>
+              <Svg source={hitBarSvg(hitOf(one))} alt={`${hitOf(one)}% hit`} width={18} height={4} />
+              <Text color={ink(hitColor(hitOf(one)))} wrap="truncate">{`${hitOf(one)}%`}</Text>
+            </Box>
           </Box>
-          {cell(`cache-steps-${one.turn}`, 7, String(one.steps))}
-          {cell(`cache-read-${one.turn}`, 9, tokens(one.read), READ_COLOR)}
-          {cell(`cache-write-${one.turn}`, 9, tokens(one.write), WRITE_COLOR)}
-          {cell(`cache-new-${one.turn}`, 8, tokens(one.fresh), FRESH_COLOR)}
-          {cell(`cache-hit-${one.turn}`, 7, `${hitOf(one)}%`, hitColor(hitOf(one)))}
-        </Box>
-      ))}
+        )
+      })}
     </Box>,
   ]
 
@@ -2708,18 +2764,25 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const extra = total.write * writeExtra
   const net = saved - extra
   const share = Math.round((net / Math.max(1, promptOf(total))) * 100)
+  const sign = (key: string, text: string) => (
+    <Text key={key} dimColor>
+      {text}
+    </Text>
+  )
   const savingsView = [
-    <Box key="cache-chart" paddingX={1} marginTop={1}>
+    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} marginTop={1} minWidth={0}>
+      {legendItem('cache-legend-read', '━ read from cache (running total)', READ_COLOR)}
+      {legendItem('cache-legend-write', '━ written to cache', WRITE_COLOR)}
+    </Box>,
+    <Box key="cache-chart" paddingX={1}>
       <Svg source={savingsChartSvg(shown, earlier, rowWidth)} alt={`Running totals: read ${tokens(total.read)}, written ${tokens(total.write)}`} width={rowWidth} height={CHART_H} />
     </Box>,
-    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} minWidth={0}>
-      {legendItem('cache-legend-read', '— read from cache (running total)', READ_COLOR)}
-      {legendItem('cache-legend-write', '— written to cache', WRITE_COLOR)}
-    </Box>,
-    <Box key="cache-tiles" flexDirection="row" gap={1} paddingX={1} marginTop={1} minWidth={0}>
-      {tile('cache-saved', 'Saved by reads', `≈ ${tokens(saved)}`, READ_COLOR, `read × ${readSaving}`)}
-      {tile('cache-extra', 'Extra for writes', `≈ ${tokens(extra)}`, WRITE_COLOR, `wrote × ${writeExtra}`)}
-      {tile('cache-net', 'Net saved', `≈ ${tokens(net)}`, undefined, `≈ ${share}% of input`)}
+    <Box key="cache-tiles" flexDirection="row" alignItems="center" columnGap={1} paddingX={1} marginTop={1} minWidth={0}>
+      {tile('cache-saved', { name: 'Saved by reads', value: `≈ ${tokens(saved)}`, color: READ_COLOR, dot: READ_COLOR, sub: `read × ${readSaving}` })}
+      {sign('cache-minus', '−')}
+      {tile('cache-extra', { name: 'Extra for writes', value: `≈ ${tokens(extra)}`, color: WRITE_COLOR, dot: WRITE_COLOR, sub: `wrote × ${writeExtra}` })}
+      {sign('cache-equals', '=')}
+      {tile('cache-net', { name: 'Net saved', value: `≈ ${tokens(net)}`, color: READ_COLOR, sub: `≈ ${share}% of input`, background: tint(READ_COLOR) })}
     </Box>,
     <Box key="cache-savings-note" paddingX={1}>
       <Text dimColor>In input-token equivalents, at list-price ratios. Not your bill.</Text>
@@ -2733,6 +2796,56 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
       {view === 'savings' ? savingsView : tokensView}
     </Box>
   )
+}
+
+async function cacheFooter($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<RenderElement[]> {
+  const t = $.ui.resolve(e)
+  const { Box, Text } = t
+  const Svg = 'Svg' in t ? t.Svg : null
+  const coarse = await read($, cacheClock)
+  const c = await readCache($)
+  if (!Svg || c === null || coarse === '') return []
+  const samples = await read($, cacheSamples)
+  const last = samples[samples.length - 1]
+  const now = await $.clock.now()
+  const ttlName = c.ttlMs % 3_600_000 === 0 ? `${c.ttlMs / 3_600_000}h` : `${Math.round(c.ttlMs / 60_000)}m`
+  const color = c.isGuess ? undefined : !c.isWarm ? EXPIRED_COLOR : c.isWarning ? WARN_COLOR : READ_COLOR
+  const state = !c.isWarm ? 'expired' : c.isWarning ? 'expiring' : 'warm'
+  const W = Math.min(1400, Math.max(160, ((e.props.bodyColumns || 40) - 2) * 7))
+  const share = c.isWarm ? Math.max(0, Math.min(1, c.left / c.ttlMs)) : 0
+  const bar = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="4" viewBox="0 0 ${W} 4"><rect width="${W}" height="4" rx="2" fill="${TRACK_COLOR}"/>${share > 0 ? `<rect width="${Math.max(2, share * W).toFixed(1)}" height="4" rx="2" fill="${color ?? QUIET}"/>` : ''}</svg>`
+  const until = clockTime(now + c.left)
+  const strong = color === undefined ? {} : { color: ink(color) }
+
+  return [
+    <Box key="hub-cache-footer" flexDirection="column" marginTop={1} paddingX={1} backgroundColor={color === undefined ? TILE_BG : tint(color)} minWidth={0}>
+      <Box key="hub-cache-footer-head" flexDirection="row" alignItems="center" columnGap={1} minWidth={0}>
+        <Box flexGrow={1} minWidth={0}>
+          <Text bold {...strong} wrap="truncate">{`${CACHE_GLYPH} Cache ${state} · ${c.isGuess ? '~' : ''}${ttlName}`}</Text>
+        </Box>
+        {c.isWarm
+          ? [
+              <Text key="hub-cache-footer-left" bold {...strong}>
+                {`${coarse} left`}
+              </Text>,
+            ]
+          : []}
+      </Box>
+      <Svg source={bar} alt={c.isWarm ? `${Math.round(share * 100)}% of the cache lifetime left` : 'Cache expired'} width={W} height={4} />
+      <Box key="hub-cache-footer-meta" flexDirection="row" columnGap={1} minWidth={0}>
+        <Box flexGrow={1} minWidth={0}>
+          <Text dimColor wrap="truncate">{`${c.isWarm ? 'Expires' : 'Expired'} ${until}`}</Text>
+        </Box>
+        {last === undefined
+          ? []
+          : [
+              <Text key="hub-cache-footer-kept" dimColor>
+                {`${tokens(last.read + last.write)} cached`}
+              </Text>,
+            ]}
+      </Box>
+    </Box>,
+  ]
 }
 
 async function cacheStartBefore($: EngineInterface): Promise<void> {
@@ -3815,8 +3928,14 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
     )
   }
 
+  const footer = await cacheFooter($, e).catch((error: unknown) => {
+    noteFailure($, 'Cache footer', error)
+    return []
+  })
+
   return (
-    <Box flexDirection="row" alignItems="stretch" minWidth={0}>
+    <Box flexDirection="column" minWidth={0}>
+      <Box key="hub-main" flexDirection="row" alignItems="stretch" minWidth={0}>
       <Box key="hub-rail" flexDirection="column" paddingY={1}>
         {sections.map((s, i) => (
           <Box key={`rail-cell-${s.id}`} position="relative" flexDirection="row" justifyContent="center" minWidth={RAIL_COLUMNS} flexShrink={0}>
@@ -3832,6 +3951,8 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
         {header}
         {body}
       </Box>
+      </Box>
+      {footer}
     </Box>
   )
 }

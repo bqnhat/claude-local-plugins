@@ -86,6 +86,7 @@ declare module 'claude-code' {
       lastRequestAt: number | null
       ttl: CacheTtl | null
       cacheLabel: string
+      cacheClock: string
       cacheSamples: CacheSample[]
       cacheView: CacheView
       calls: CallEntry[]
