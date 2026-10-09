@@ -4169,6 +4169,11 @@ function noteFailure($: EngineInterface, where: string, error: unknown): string 
   return message
 }
 
+const CACHE_BLOCK_ROWS = 8.375
+const PANE_FILL_STYLE = themeStyle('.pane{fill:#FFFFFF}', '.pane{fill:#262624}')
+const pinnedBackingSvg = (columns: number) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${widthOf(columns)}" height="${CACHE_BLOCK_ROWS * CELL_PX}">${PANE_FILL_STYLE}<rect class="pane" width="100%" height="100%"/></svg>`
+
 async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<RenderElement> {
   const t = $.ui.resolve(e)
   const { Box, Button, Text } = t
@@ -4227,8 +4232,8 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
   })
 
   return (
-    <Box flexDirection="column" minWidth={0}>
-      {footer.length > 0 ? [...footer, <Box key="hub-footer-rule" height={0.1} backgroundColor={DIVIDER} />] : []}
+    <Box flexDirection="column" minWidth={0} position="relative">
+      {footer.length > 0 ? [<Box key="hub-cache-spacer" height={CACHE_BLOCK_ROWS} />] : []}
       <Box key="hub-main" flexDirection="row" alignItems="stretch" minWidth={0}>
       <Box key="hub-rail" flexDirection="column" paddingY={0.5}>
         {sections.map((s, i) => (
@@ -4246,6 +4251,21 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
         {body}
       </Box>
       </Box>
+      {footer.length > 0 ? (
+        [
+          <Box key="hub-pinned" position="absolute" top={e.props.scroll.offset} left={0} right={0} height={CACHE_BLOCK_ROWS} flexDirection="column" minWidth={0}>
+            <Box key="hub-pinned-backing" position="absolute" top={0} left={0}>
+              <Svg source={pinnedBackingSvg(columns)} alt="" width={widthOf(columns)} height={CACHE_BLOCK_ROWS * CELL_PX} />
+            </Box>
+            <Box key="hub-pinned-content" position="relative" flexDirection="column" minWidth={0}>
+              {footer}
+              <Box key="hub-footer-rule" height={0.1} backgroundColor={DIVIDER} />
+            </Box>
+          </Box>,
+        ]
+      ) : (
+        []
+      )}
     </Box>
   )
 }

@@ -225,6 +225,19 @@ describe('the Cache section of Mod status', () => {
     expect(expired.some(line => line.startsWith('Expired '))).toBe(true)
   })
 
+  test('the footer stays on the first row of the window however far the body is scrolled', async ($, on) => {
+    const w = world(on)
+    await press($, 'rail-progress')
+    await request($, w, 't1', { read: 1000, write: 500, fresh: 0 })
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'Pane', requestId: PANE, props: { ...PANE_PROPS, scroll: { offset: 7, bodyRows: 80 } } })
+    const pinned = await ui.find({ type: 'Box', key: 'hub-pinned' })
+    const footer = await ui.find({ type: 'Box', key: 'hub-cache-footer' })
+    await ui.unmount()
+    expect(pinned?.props.top).toBe(7)
+    expect(footer).toBeDefined()
+  })
+
   test('Savings switches the view, works out what the cache saved, and the choice stays', async ($, on) => {
     const w = world(on)
     await press($, 'rail-cache')
