@@ -1306,7 +1306,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     </Box>
   )
 
-  const stepRow = (item: Timed, key: string, depth: number, tint: string, times: Times, isTimeline = false, isTree = false) => {
+  const stepRow = (item: Timed, key: string, depth: number, tint: string, times: Times, isTimeline = false) => {
     const isLive = item.status === 'active' || item.status === 'error'
     const took = shownTime(times.items.get(item) ?? '', now)
     const mark = STEP_GLYPH[item.status]
@@ -1339,19 +1339,9 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
         {glyph}
       </Box>
     )
-    const lead =
-      isTree && Svg && depth === 0 ? (
-        <Box key={`${key}-lead`} flexDirection="row" alignItems="center" flexShrink={0}>
-          <Box key={`${key}-elbow`} width={STEP_ELBOW} height={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
-          {markBox}
-        </Box>
-      ) : (
-        markBox
-      )
-
     return (
-      <Box key={key} flexDirection="row" gap={isTimeline ? 0.75 : 1} marginLeft={isTree && Svg && depth > 0 ? STEP_ELBOW + depth * 2 : depth * 2} minWidth={0}>
-        {lead}
+      <Box key={key} flexDirection="row" gap={isTimeline ? 0.75 : 1} marginLeft={depth * 2} minWidth={0}>
+        {markBox}
         <Box flexGrow={1} minWidth={0}>
           {title}
         </Box>
@@ -1460,11 +1450,8 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
                 const state = stageStateOf(s)
                 const isLast = i === p.stages.length - 1
                 return (
-                  <Box key={`stage-block-${p.id}-${i}`} flexDirection="row" alignItems="stretch" marginLeft={TREE_OFFSET} marginTop={i === 0 ? 1 : 0} minWidth={0}>
-                    <Box key={`stage-guide-${p.id}-${i}`} width={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
-                    <Box key={`stage-body-${p.id}-${i}`} flexDirection="column" flexGrow={1} minWidth={0} paddingBottom={isLast ? 0 : 0.75}>
+                  <Box key={`stage-block-${p.id}-${i}`} flexDirection="column" marginLeft={STAGE_INDENT} marginTop={i === 0 ? 1 : 0} paddingBottom={isLast ? 0 : 0.75} minWidth={0}>
                       <Box key={`stage-${p.id}-${i}`} flexDirection="row" alignItems="center" minWidth={0}>
-                        <Box key={`stage-elbow-${p.id}-${i}`} width={STAGE_ELBOW} height={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
                         <Box key={`stage-node-${p.id}-${i}`} flexShrink={0}>
                           <Svg source={stageNodeSvg(state, color)} alt={`${s.name}: ${STAGE_WORD[state]}`} width={STAGE_NODE} height={STAGE_NODE} />
                         </Box>
@@ -1479,18 +1466,17 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
                       </Box>
                       {s.steps.length > 0
                         ? [
-                            <Box key={`step-tree-${p.id}-${i}`} flexDirection="row" alignItems="stretch" marginLeft={STEP_TREE_INDENT} minWidth={0}>
+                            <Box key={`step-tree-${p.id}-${i}`} flexDirection="row" alignItems="stretch" marginLeft={STEP_GUIDE_INDENT} marginTop={0.25} minWidth={0}>
                               <Box key={`step-guide-${p.id}-${i}`} width={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
-                              <Box key={`step-list-${p.id}-${i}`} flexDirection="column" flexGrow={1} minWidth={0}>
+                              <Box key={`step-list-${p.id}-${i}`} flexDirection="column" flexGrow={1} paddingLeft={STEP_PAD} minWidth={0}>
                                 {s.steps.flatMap((step, j) => [
-                                  stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times, true, true),
-                                  ...step.substeps.map((sub, k) => stepRow(sub, `sub-${p.id}-${i}-${j}-${k}`, 1, color, times, true, true)),
+                                  stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times, true),
+                                  ...step.substeps.map((sub, k) => stepRow(sub, `sub-${p.id}-${i}-${j}-${k}`, 1, color, times, true)),
                                 ])}
                               </Box>
                             </Box>,
                           ]
                         : []}
-                    </Box>
                   </Box>
                 )
               })
@@ -2656,10 +2642,9 @@ const FOOTER_TRACK_STYLE = themeStyle('.track{fill:#FFFFFF}', '.track{fill:#FFFF
 const RING_STYLE = themeStyle('.ring{stroke:#FFFFFF}', '.ring{stroke:#262624}')
 const widthOf = (columns: number) => Math.min(STRETCH_W, Math.max(160, Math.floor(columns * CELL_PX)))
 const TREE_LINE = 0.15
-const TREE_OFFSET = 1.5 - TREE_LINE / 2
-const STAGE_ELBOW = 2
-const STEP_ELBOW = 2.5
-const STEP_TREE_INDENT = STAGE_ELBOW + STAGE_NODE / CELL_PX / 2 - TREE_LINE / 2
+const STAGE_INDENT = 3.5
+const STEP_GUIDE_INDENT = STAGE_NODE / CELL_PX / 2 - TREE_LINE / 2
+const STEP_PAD = 2
 const TITLE_RESERVE = 120
 
 function clockIconSvg(color: string): string {
