@@ -24,13 +24,13 @@ function world(on: On): MockClock {
 const flat = (node: unknown): string =>
   typeof node === 'string' ? node : Array.isArray(node) ? node.map(flat).join('') : node !== null && typeof node === 'object' ? flat((node as { children?: unknown }).children ?? []) : ''
 
-const MARK_STATE: Record<string, string> = { '#1D9E75': 'done', '#8B7CF6': 'active', '#E09A1E': 'waiting', '#E5484D': 'failed', '#8A8984': 'pending' }
+const MARK_STATE: Record<string, string> = { success: 'done', '#8B7CF6': 'active', warning: 'waiting', error: 'failed' }
 
 const markOf = (node: unknown): string => {
   if (node === null || typeof node !== 'object') return ''
-  const one = node as { type?: unknown; props?: { source?: unknown }; children?: unknown }
-  if (one.type === 'Svg') return MARK_STATE[/fill="(#[0-9A-F]{6})"/.exec(String(one.props?.source))?.[1] ?? ''] ?? '?'
-  return one.type === 'Text' ? flat(one) : ''
+  const one = node as { type?: unknown; props?: { color?: unknown; dimColor?: unknown }; children?: unknown }
+  if (one.type !== 'Text') return ''
+  return one.props?.dimColor === true ? 'pending' : (MARK_STATE[String(one.props?.color)] ?? '?')
 }
 
 async function stepLine($: Engine, key: string): Promise<string> {
@@ -41,11 +41,11 @@ async function stepLine($: Engine, key: string): Promise<string> {
   const walk = (node: unknown): void => {
     if (node === null || typeof node !== 'object') return
     const one = node as { type?: unknown; children?: unknown }
-    if (one.type === 'Text' || (one.type === 'Svg' && !key.startsWith('stage-'))) texts.push(one)
+    if (one.type === 'Text') texts.push(one)
     else if (Array.isArray(one.children)) one.children.forEach(walk)
   }
   walk(row)
-  const line = texts.map((one, i) => (i === 0 ? markOf(one) : flat(one))).join('|')
+  const line = texts.map((one, i) => (i === 0 && !key.startsWith('stage-') ? markOf(one) : flat(one))).join('|')
   await ui.unmount()
   return line
 }

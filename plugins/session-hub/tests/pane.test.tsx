@@ -366,10 +366,8 @@ describe('the Progress pane on Desktop', () => {
     const ui = await pane($)
     const marks = (await ui.findAll({ type: 'Box' })).filter(box => (box.key ?? '').endsWith('-mark'))
     await ui.unmount()
-    const dots = marks.map(box => String((box.children as { type?: string; props: { source?: unknown } }[])[0]?.props.source))
-    expect(dots.map(source => /fill="(#[0-9A-F]{6})"/.exec(source)?.[1])).toEqual(['#1D9E75', '#E5484D', '#8A8984'])
-    expect(dots[2]).toContain('fill-opacity=".45"')
-    expect(marks.map(box => box.props.width)).toEqual([0.75, 0.75, 0.75])
+    expect(marks.map(box => flat(box))).toEqual(['✓', '!', '○'])
+    expect(marks.map(box => box.props.width)).toEqual([1, 1, 1])
   })
 
   test('a row counts the agents at work, and its details list each agent with its tool and time', async ($, on) => {

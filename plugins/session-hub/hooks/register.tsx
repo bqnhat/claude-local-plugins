@@ -513,11 +513,6 @@ function planRingSvg(p: Plan, pct: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PLAN_RING}" height="${PLAN_RING}" viewBox="0 0 ${PLAN_RING} ${PLAN_RING}"><circle cx="${PLAN_RING / 2}" cy="${PLAN_RING / 2}" r="${r}" fill="none" stroke="${QUIET}" stroke-opacity=".3" stroke-width="3"/><circle cx="${PLAN_RING / 2}" cy="${PLAN_RING / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${((pct / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${PLAN_RING / 2} ${PLAN_RING / 2})"/>${mark}</svg>`
 }
 
-function stepDotSvg(status: StepStatus, live: string): string {
-  const faint = status === 'pending' || status === 'skipped' ? ' fill-opacity=".45"' : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${STEP_DOT}" height="${STEP_DOT}" viewBox="0 0 6 6"><circle cx="3" cy="3" r="2.5" fill="${stepColor(status, live)}"${faint}/></svg>`
-}
-
 function chevronSvg(isOpen: boolean): string {
   const path = isOpen ? 'M3 4.5 6 7.5 9 4.5' : 'M4.5 3 7.5 6 4.5 9'
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CHEVRON}" height="${CHEVRON}" viewBox="0 0 12 12"><path d="${path}" fill="none" stroke="${QUIET}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
@@ -604,7 +599,6 @@ function agentCounts(agents: readonly AgentRun[]): string {
 
 const STEP_GLYPH: Record<StepStatus, string> = { done: '✓', active: '●', pending: '○', error: '!', skipped: '–' }
 const STAGE_NODE = 16
-const STEP_DOT = 6
 const TIMELINE_LINE = '#80808062'
 
 type StageState = 'done' | 'error' | 'active' | 'pending'
@@ -1275,9 +1269,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const took = shownTime(times.items.get(item) ?? '', now)
     const mark = STEP_GLYPH[item.status]
     const glyph =
-      isTimeline && Svg ? (
-        <Svg source={stepDotSvg(item.status, tint)} alt="" width={STEP_DOT} height={STEP_DOT} />
-      ) : item.status === 'pending' ? (
+      item.status === 'pending' ? (
         <Text dimColor>{mark}</Text>
       ) : (
         <Text color={ink(stepColor(item.status, tint))}>{mark}</Text>
@@ -1299,7 +1291,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     )
 
     const markBox = (
-      <Box key={`${key}-mark`} width={isTimeline ? 0.75 : 1} flexShrink={0} justifyContent="center" alignItems="center">
+      <Box key={`${key}-mark`} width={1} flexShrink={0} justifyContent="center" alignItems="center">
         {glyph}
       </Box>
     )
