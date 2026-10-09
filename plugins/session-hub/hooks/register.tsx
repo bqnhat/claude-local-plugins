@@ -2573,6 +2573,9 @@ const CACHE_DOT = '●'
 
 const MAX_SAMPLES = 2000
 const CHART_TURNS = 12
+const CHART_SLOT = 22
+const CHART_SIDES = 94
+const TABLE_TURNS = 100
 const CHART_H = 116
 const READ_COLOR = GREEN
 const WRITE_COLOR = ORANGE
@@ -2931,7 +2934,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   }
 
   const turns = byCacheTurn(samples)
-  const shown = turns.slice(-CHART_TURNS)
+  const shown = turns.slice(-Math.max(CHART_TURNS, Math.floor((rowWidth - CHART_SIDES) / CHART_SLOT)))
   const earlier = sumTokens(turns.slice(0, turns.length - shown.length))
   const total = sumTokens(turns)
   const last = samples[samples.length - 1]
@@ -3027,7 +3030,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
         {headCell('cache-th-new', { width: COLS.fresh, text: 'New' })}
         {headCell('cache-th-hit', { width: COLS.hit, text: 'Hit', isFixed: true })}
       </Box>
-      {[...shown].reverse().map(one => {
+      {turns.slice(-TABLE_TURNS).reverse().map(one => {
         const isLatest = one.turn === latest
         const pct = hitOf(one)
         return (

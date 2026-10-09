@@ -141,7 +141,7 @@ describe('a long working day', () => {
     await press($, 'rail-cache')
     const cache = await snapshot($)
     expect(cache.texts).toContain('Session · 200 turns · 2000 requests')
-    expect(cache.keys.filter(key => key.startsWith('cache-row-'))).toEqual(Array.from({ length: 12 }, (_, i) => `cache-row-${200 - i}`))
+    expect(cache.keys.filter(key => key.startsWith('cache-row-'))).toEqual(Array.from({ length: 100 }, (_, i) => `cache-row-${200 - i}`))
     expect(cache.svgs.every(one => one.length < SVG_LIMIT)).toBe(true)
   })
 

@@ -158,15 +158,15 @@ describe('the Cache section of Mod status', () => {
     expect(alts.some(alt => alt.startsWith('Tokens per turn and hit rate'))).toBe(true)
   })
 
-  test('the chart and table show the last twelve turns while the totals keep the whole session', async ($, on) => {
+  test('the table lists every turn from the first one, newest on top, and the totals keep the whole session', async ($, on) => {
     const w = world(on)
     await press($, 'rail-cache')
     for (let i = 1; i <= 14; i++) await request($, w, `t${i}`, { read: 1000, write: 0, fresh: 0 })
 
     const rows = await tableRows($)
-    expect(rows).toHaveLength(12)
+    expect(rows).toHaveLength(14)
     expect(rows[0]?.startsWith('14 ')).toBe(true)
-    expect(rows[11]?.startsWith('3 ')).toBe(true)
+    expect(rows[13]?.startsWith('1 ')).toBe(true)
     expect(await texts($)).toContain('Session · 14 turns · 14 requests')
   })
 
