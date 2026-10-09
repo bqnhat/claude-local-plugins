@@ -1350,22 +1350,23 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const took = span(endOf(p, now) - p.startedAt)
     const isSingle = p.stages.length === 1
     const isTimeline = Svg !== null && p.id !== AGENTS && !isSingle
-    const finishedSteps = p.stages.flatMap(s => s.steps).filter(step => isFinished(step.status)).length
-    const meta = Svg
-      ? `Started ${clockTime(p.startedAt)}${p.id === AGENTS ? ` · ${overview(p, w)}` : ` · ${finishedSteps}/${w.total} steps`}`
-      : `Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${took ? ` · ${took}` : ''}`
+    const meta = `Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${took ? ` · ${took}` : ''}`
     const hideWord = p.hidden ? 'Show again' : 'Hide'
 
     return (
-      <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={DETAIL_INDENT} marginRight={1} marginTop={Svg ? 0.5 : 0} marginBottom={1} minWidth={0}>
-        <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" columnGap={0.75} minWidth={0}>
-          <Box flexGrow={1} minWidth={0}>
-            <Text dimColor wrap="truncate">
-              {meta}
-            </Text>
-          </Box>
-          <Button key={`close-${p.id}`} plain dimColor label={hideWord} onPress={() => (p.hidden ? unhidePlan($, p.id) : hidePlan($, p.id))} />
-        </Box>
+      <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={DETAIL_INDENT} marginRight={1} marginBottom={1} minWidth={0}>
+        {Svg
+          ? []
+          : [
+              <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" columnGap={0.75} minWidth={0}>
+                <Box flexGrow={1} minWidth={0}>
+                  <Text dimColor wrap="truncate">
+                    {meta}
+                  </Text>
+                </Box>
+                <Button key={`close-${p.id}`} plain dimColor label={hideWord} onPress={() => (p.hidden ? unhidePlan($, p.id) : hidePlan($, p.id))} />
+              </Box>,
+            ]}
         {p.note
           ? [
               Svg ? (
@@ -1474,14 +1475,21 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const took = shortSpan(endOf(p, now) - p.startedAt)
     const mark = !Svg ? <Text color={ink(color)}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planIconSvg(p, pct)} alt={`${p.title} ${pct}% · ${STATE_WORD[p.state]}`} width={PLAN_RING} height={PLAN_RING} />
     const isQuiet = p.state === 'done' || p.hidden === true
-    const line = isAlert ? (
-      <Text key={`line-${p.id}`} color={ink(color)} wrap="truncate">
-        {overview(p, w)}
-      </Text>
-    ) : (
-      <Text key={`line-${p.id}`} dimColor wrap="truncate">
-        {overview(p, w)}
-      </Text>
+    const hasHide = isWide && Svg !== null
+    const hideWord = p.hidden ? 'Show again' : 'Hide'
+    const summary = hasHide ? `${overview(p, w)} · started ${clockTime(p.startedAt)}` : overview(p, w)
+    const line = (
+      <Box key={`line-${p.id}`} paddingRight={hasHide ? hideWord.length + 1 : 0} minWidth={0}>
+        {isAlert ? (
+          <Text color={ink(color)} wrap="truncate">
+            {summary}
+          </Text>
+        ) : (
+          <Text dimColor wrap="truncate">
+            {summary}
+          </Text>
+        )}
+      </Box>
     )
 
     return [
@@ -1525,6 +1533,13 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
         ) : (
           []
         )}
+        {hasHide
+          ? [
+              <Box key={`hide-${p.id}`} position="absolute" right={1} bottom={0} flexDirection="row">
+                <Button key={`close-${p.id}`} plain dimColor label={hideWord} onPress={() => (p.hidden ? unhidePlan($, p.id) : hidePlan($, p.id))} />
+              </Box>,
+            ]
+          : []}
       </Box>,
       ...(isWide ? [detail(p)] : []),
     ]

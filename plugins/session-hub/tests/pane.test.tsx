@@ -251,7 +251,7 @@ describe('the Progress pane on Desktop', () => {
     expect(await svgSource($, 'Ship: not started')).toContain('<svg')
     expect(await texts($)).toEqual(expect.arrayContaining(['Read', '1/1', 'Build', '0/2', 'Ship', '0/1', 'Code', 'Edit', 'Types', 'Test', 'Release', 'tests first']))
     expect(await svgSource($, 'Fold')).toContain('M3 4.5 6 7.5 9 4.5')
-    expect((await texts($)).filter(one => one.startsWith('Started '))).toEqual([expect.stringMatching(/ · 1\/4 steps$/)])
+    expect((await texts($)).filter(one => / · started \d\d:\d\d$/.test(one))).toHaveLength(1)
     expect((await texts($)).some(one => one.includes('→'))).toBe(false)
 
     await press($, 'toggle-plan')
@@ -333,7 +333,7 @@ describe('the Progress pane on Desktop', () => {
     await press($, 'toggle-job')
     await clock.advance(5000)
     const all = await texts($)
-    expect(all.filter(text => text.endsWith(' steps'))).toEqual([expect.stringMatching(/ · 3\/3 steps$/)])
+    expect(all.filter(text => text === '✓')).toHaveLength(4)
     expect(all.filter(text => text === '●' || text === '○')).toEqual([])
     expect(all.some(text => text.endsWith('…'))).toBe(false)
   })
@@ -352,7 +352,7 @@ describe('the Progress pane on Desktop', () => {
       await finish($, id)
       await press($, `toggle-${id}`)
       const all = await texts($)
-      expect(all.filter(text => text.endsWith(' steps'))).toEqual([expect.stringMatching(/ · 3\/3 steps$/)])
+      expect(all.filter(text => text === '✓')).toHaveLength(3)
       expect(all.filter(text => ['●', '○', '!'].includes(text))).toEqual([])
       await press($, `toggle-${id}`)
     }
@@ -381,7 +381,7 @@ describe('the Progress pane on Desktop', () => {
     expect(await texts($)).toEqual(expect.arrayContaining(['Agents', '1 running', 'Scout', 'Starting', '3s']))
 
     await finishAgent($, 'use-1')
-    expect(await texts($)).toEqual(expect.arrayContaining([expect.stringMatching(/^Started \d\d:\d\d · 0\/2 steps$/), '1 done', 'Done']))
+    expect(await texts($)).toEqual(expect.arrayContaining([expect.stringMatching(/ · started \d\d:\d\d$/), '1 done', 'Done']))
   })
 
   test('Hide in the details hides one bar, and the pane stays up after the last one', async ($, on) => {
@@ -784,7 +784,7 @@ describe('what a row says', () => {
     expect(all.some(one => /^Done at \d\d:\d\d$/.test(one))).toBe(true)
   })
 
-  test('an opened finished bar keeps its Done at line and adds its start and step count in the detail line', async ($, on) => {
+  test('an opened finished bar adds its start to its Done at line instead of a line of its own', async ($, on) => {
     world(on)
     await create($, 'finished')
     await finish($, 'finished')
@@ -792,8 +792,8 @@ describe('what a row says', () => {
     await press($, 'toggle-finished')
     const all = await texts($)
 
-    expect(all.some(one => /^Started \d\d:\d\d · 2\/2 steps$/.test(one))).toBe(true)
-    expect(all.filter(one => one.startsWith('Done at '))).toHaveLength(1)
+    expect(all.filter(one => one.startsWith('Done at '))).toEqual([expect.stringMatching(/^Done at \d\d:\d\d · started \d\d:\d\d$/)])
+    expect(all.some(one => one.startsWith('Started '))).toBe(false)
   })
 
   test('the Progress pane leaves the Agents bar out, its agents stay in the band above the prompt', async ($, on) => {
@@ -805,7 +805,7 @@ describe('what a row says', () => {
     expect(await texts($)).toContain('No progress bars yet. One appears when Claude starts a task with several steps.')
   })
 
-  test('an open bar keeps the same title and summary line as when folded and hangs each stage\'s steps on one plain guide', async ($, on) => {
+  test('an open bar keeps the title and summary line it has when folded, adds its start to that line, and hangs each stage\'s steps on one plain guide', async ($, on) => {
     world(on)
     await $.tool.call({
       tool: TOOL,
@@ -826,7 +826,8 @@ describe('what a row says', () => {
     const folded = await head()
     await press($, 'toggle-plan')
     const open = await head()
-    expect(open.words).toBe(folded.words)
+    expect(open.words.startsWith(`${folded.words} · started `)).toBe(true)
+    expect(open.words).toMatch(/ · started \d\d:\d\d$/)
     expect(folded.words).toContain('Step 2/3')
     const keys = open.keys
     expect(keys.filter(key => key.startsWith('step-guide-plan-'))).toHaveLength(2)
