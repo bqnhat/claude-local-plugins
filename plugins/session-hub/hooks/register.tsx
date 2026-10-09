@@ -3110,7 +3110,7 @@ async function cacheFooter($: EngineInterface, e: RenderInputOf<'Pane'>): Promis
     )
 
   return [
-    <Box key="hub-cache-footer" flexDirection="column" rowGap={0} marginX={0.5} marginTop={1} marginBottom={0.25} paddingTop={0.5} paddingBottom={0.625} paddingX={1.25} borderStyle="round" borderColor="#00000000" backgroundColor={card} minWidth={0}>
+    <Box key="hub-cache-footer" flexDirection="column" rowGap={0} marginX={0.5} marginTop={0.5} marginBottom={0.5} paddingTop={0.5} paddingBottom={0.625} paddingX={1.25} borderStyle="round" borderColor="#00000000" backgroundColor={card} minWidth={0}>
       <Box key="hub-cache-footer-head" flexDirection="row" alignItems="center" columnGap={0.5} minWidth={0}>
         <Svg key="hub-cache-footer-icon" source={clockIconSvg(fill)} alt="" width={CLOCK_ICON} height={CLOCK_ICON} />
         <Box flexGrow={1} minWidth={0}>
@@ -4228,6 +4228,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
 
   return (
     <Box flexDirection="column" minWidth={0}>
+      {footer.length > 0 ? [...footer, <Box key="hub-footer-rule" height={0.1} backgroundColor={DIVIDER} />] : []}
       <Box key="hub-main" flexDirection="row" alignItems="stretch" minWidth={0}>
       <Box key="hub-rail" flexDirection="column" paddingY={0.5}>
         {sections.map((s, i) => (
@@ -4245,7 +4246,6 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
         {body}
       </Box>
       </Box>
-      {footer.length > 0 ? [<Box key="hub-footer-rule" height={0.1} backgroundColor={DIVIDER} />, ...footer] : []}
     </Box>
   )
 }
