@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Args, CommandInfo, EngineInterface, ModelUsage, TurnUsage, On, Origin, Register, RenderElement, RenderInput, RenderInputOf } from 'claude-code'
 
-import type { AgentRun, CacheSample, CacheTtl, CallEntry, CallKind, CallOrigin, CallStatus, HubPaneState, HubSection, LiveTime, LoadedFile, OfferRecord, OriginScope, Plan, PlanStage, PlanState, PlanStep, PlanSubstep, ShownTime, SourceMap, StepStatus, Suggestion, SuggestionKind, View } from '../types'
+import type { AgentRun, CacheSample, CacheTtl, CallEntry, CallKind, CallOrigin, CallStatus, HubPaneState, HubSection, LiveTime, LoadedFile, OfferRecord, OriginScope, Plan, PlanStage, PlanState, PlanStep, PlanSubstep, ShownTime, SourceMap, StepStatus, Suggestion, SuggestionDetail, SuggestionKind, View } from '../types'
 
 const plans = atom({ plugin: 'session-hub', key: 'plans' } as const, [])
 const isOpen = atom({ plugin: 'session-hub', key: 'isOpen' } as const, true)
@@ -15,6 +15,7 @@ const paneState = atom({ plugin: 'session-hub', key: 'paneState' } as const, 'do
 const section = atom({ plugin: 'session-hub', key: 'section' } as const, 'progress')
 const savedView = atom({ plugin: 'session-hub', key: 'view' } as const, { kind: 'hidden' })
 const history = atom({ plugin: 'session-hub', key: 'history' } as const, [])
+const openDetail = atom({ plugin: 'session-hub', key: 'openDetail' } as const, -1)
 const lastRequestAt = atom({ plugin: 'session-hub', key: 'lastRequestAt' } as const, null)
 const ttl = atom({ plugin: 'session-hub', key: 'ttl' } as const, null)
 const cacheLabel = atom({ plugin: 'session-hub', key: 'cacheLabel' } as const, '')
@@ -1585,6 +1586,12 @@ const PICK_PREFIX = 40
 const CRITIC_MIN_SCORE = 3
 const CRITIC_MAX_TOKENS = 800
 const CRITIC_TIMEOUT_MS = 20_000
+const DETAIL_TITLE_TARGET = 60
+const DETAIL_TITLE_MAX = 90
+const DETAIL_POINT_TARGET = 160
+const DETAIL_POINT_MAX = 240
+const DETAIL_POINTS_MIN = 2
+const DETAIL_POINTS_MAX = 4
 const CONTEXT_REQUEST_MAX = 1000
 const CONTEXT_ANSWER_TAIL = 1500
 const CRITIC_MODELS = ['off', 'haiku', 'opus'] as const
@@ -1744,14 +1751,25 @@ function forkPrompt(skills: string, anchors: string): string {
     'analysis or the tool output: plain everyday words, the thing involved named outright (the file, ' +
     'screen, feature or command) instead of "it" or "this", English terms and code names only where ' +
     'Vietnamese has no plain word for them. Never put internal terms in label or why: crux, slot, ' +
-    'verify, dig, advance, decide, analysis.\n\n' +
-    'Each suggestion has four fields besides its kind:\n' +
+    'verify, dig, advance, decide, analysis. Never reuse a name or word you coined during this session ' +
+    'unless the user used it too.\n\n' +
+    'Each suggestion has five fields besides its kind:\n' +
     `- label: at most ${LABEL_TARGET} characters, what the step does, as a short phrase\n` +
     `- why: at most ${WHY_TARGET} characters, one plain sentence saying what the user learns or gains from it\n` +
     "- prompt: the full prompt in the user's voice and language, imperative and self-contained: name the " +
     'exact file, function, test, command, PR or data involved, say what to find out or change, and say ' +
     `how to tell it is done, all in under ${PROMPT_TARGET} characters. The reasoning belongs in why: no ` +
-    'asides, option lists or parameter values the next turn can choose itself.\n\n' +
+    'asides, option lists or parameter values the next turn can choose itself.\n' +
+    '- detail: what the user reads on opening the suggestion, so they understand it fully without the ' +
+    `conversation: {"title": a statement of the one takeaway in at most ${DETAIL_TITLE_TARGET} characters, ` +
+    `"points": ${DETAIL_POINTS_MIN} to ${DETAIL_POINTS_MAX} plain Vietnamese sentences, each under ` +
+    `${DETAIL_POINT_TARGET} characters, saying what will be done and on which exact thing, why it ` +
+    'matters now (the fact in this session that calls for it) and what the user will know or have once ' +
+    'it is done}. Write the title as a statement, not a question or teaser, naming the actual thing ' +
+    'instead of "this" or "it".\n\n' +
+    'Write label, why and detail for a busy person who switches between tasks and remembers nothing of ' +
+    'this session: explain in plain words any technical term the user has not used themselves, and keep ' +
+    'every noun clear to someone reading it a week from now.\n\n' +
     'The user sends the prompt as their own message right after reading your last answer, so it must ' +
     'never claim they already did something only they can do outside this chat: restarting or reloading ' +
     'the session, opening, switching or clicking a pane, tab or screen, installing, updating or enabling ' +
@@ -1773,7 +1791,8 @@ function forkPrompt(skills: string, anchors: string): string {
         `<available-skills>\n${skills}\n</available-skills>\n\n`) +
     'Answer with the <analysis> block, then ONLY a JSON array inside <suggestions></suggestions>, no ' +
     'other prose and no code fence: ' +
-    '<suggestions>[{"kind": "verify|decide|dig|advance", "label": "…", "why": "…", "prompt": "…"}]</suggestions>'
+    '<suggestions>[{"kind": "verify|decide|dig|advance", "label": "…", "why": "…", "prompt": "…", ' +
+    '"detail": {"title": "…", "points": ["…", "…"]}}]</suggestions>'
   )
 }
 
@@ -1843,7 +1862,7 @@ function parseSuggestions(listed: string, known: ReadonlySet<string> | null, blo
   const seen = new Set<string>()
   for (const entry of parseJsonArray(listed) ?? []) {
     if (typeof entry !== 'object' || entry === null) continue
-    const { kind: written, label, why, prompt } = entry as Record<string, unknown>
+    const { kind: written, label, why, prompt, detail } = entry as Record<string, unknown>
     const kind = readKind(written)
     if (!isKind(kind) || typeof prompt !== 'string' || typeof why !== 'string') continue
     const filled = cleanText(prompt, PROMPT_LIMIT + 1)
@@ -1855,11 +1874,33 @@ function parseSuggestions(listed: string, known: ReadonlySet<string> | null, blo
     const promptKey = `prompt ${labelKey(filled)}`
     if (blocked.has(labelKey(shown)) || seen.has(labelKey(shown)) || seen.has(promptKey)) continue
     seen.add(labelKey(shown)).add(promptKey)
-    items.push({ kind, label: shown, why: reason, prompt: filled })
+    const explained = readDetail(detail)
+    items.push({ kind, label: shown, why: reason, prompt: filled, ...(explained === null ? {} : { detail: explained }) })
     if (items.length === MAX_CANDIDATES) break
   }
   return items
 }
+
+function readDetail(value: unknown): SuggestionDetail | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { title, points } = value as Record<string, unknown>
+  if (typeof title !== 'string' || !Array.isArray(points)) return null
+  const heading = cleanText(title.replace(/^\*+|\*+$/g, ''), DETAIL_TITLE_MAX)
+  const lines = points
+    .filter((point): point is string => typeof point === 'string')
+    .map(point => cleanText(point.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, ''), DETAIL_POINT_MAX))
+    .filter(point => point !== '')
+    .slice(0, DETAIL_POINTS_MAX)
+  return heading === '' || lines.length === 0 ? null : { title: heading, points: lines }
+}
+
+const isDetail = (value: unknown): boolean =>
+  value === undefined ||
+  (typeof value === 'object' &&
+    value !== null &&
+    typeof (value as SuggestionDetail).title === 'string' &&
+    Array.isArray((value as SuggestionDetail).points) &&
+    (value as SuggestionDetail).points.every(point => typeof point === 'string'))
 
 type ParsedReply = { goal: string; analysis: string; items: Suggestion[] }
 
@@ -1899,8 +1940,10 @@ const CRITIC_SYSTEM =
   '(it is about what the latest request and the end of the last answer are about), impact (how ' +
   'much it moves the goal or answers the open question in the analysis), specific (names the exact ' +
   'file, command or data and how to tell it is done), leading (its why says what the person learns or ' +
-  'gains) and clear (label and why are plain Vietnamese the person understands without the ' +
-  'conversation, name what is involved and use no internal terms such as crux or slot). A candidate ' +
+  'gains) and clear (label, why and detail are plain Vietnamese a busy person understands with no ' +
+  'memory of the conversation: they name what is involved, explain any technical term in plain words, ' +
+  'use no internal terms such as crux or slot and no words coined during the session; the detail ' +
+  'title states the takeaway). A candidate ' +
   'whose prompt says the person already did something only they can do outside the chat (restart or ' +
   'reload the session, open, switch or click a pane, tab or screen, install, update or enable a plugin) ' +
   'scores 1 whatever its other merits, because Claude would build on a step it cannot see; one whose ' +
@@ -1918,9 +1961,10 @@ function contextBlock(tag: string, text: string): string {
 }
 
 function criticPrompt(parsed: ParsedReply, context: TurnContext): string {
-  const lines = parsed.items.map(
-    (item, index) => `[${index}] kind: ${item.kind} | label: ${item.label} | why: ${item.why} | prompt: ${item.prompt}`,
-  )
+  const lines = parsed.items.map((item, index) => {
+    const detail = item.detail === undefined ? 'none' : `${item.detail.title} — ${item.detail.points.join(' / ')}`
+    return `[${index}] kind: ${item.kind} | label: ${item.label} | why: ${item.why} | prompt: ${item.prompt} | detail: ${detail}`
+  })
   const request = cleanText(context.request, CONTEXT_REQUEST_MAX)
   const answer = cleanText([...context.answer].slice(-CONTEXT_ANSWER_TAIL).join(''), CONTEXT_ANSWER_TAIL)
   return (
@@ -1990,6 +2034,7 @@ function show($: EngineInterface, nextView: View): void {
 async function offer($: EngineInterface, items: Suggestion[], goal: string): Promise<void> {
   const offered: View = { kind: 'offer', items, goal }
   view = offered
+  await update($, openDetail, () => -1)
   await update($, savedView, () => offered)
   $.ui.invalidate('ui.render')
   if (!(await isViewingCalls($)) && !(await read($, plans)).some(p => p.state !== 'done' && !p.hidden)) await showSection($, 'next')
@@ -2120,7 +2165,7 @@ function configureNextSteps(options: Record<string, unknown> | undefined): void 
 async function nextStepsStartAfter($: EngineInterface): Promise<void> {
   const kept = await read($, savedView)
   if (kept.kind === 'hidden' || view.kind !== 'hidden') return
-  if (kept.kind === 'offer' && !kept.items.every(item => isKind(item.kind) && typeof item.why === 'string' && typeof item.prompt === 'string' && !claimsOutsideStep(item.prompt))) return
+  if (kept.kind === 'offer' && !kept.items.every(item => isKind(item.kind) && typeof item.why === 'string' && typeof item.prompt === 'string' && isDetail(item.detail) && !claimsOutsideStep(item.prompt))) return
   view = kept
   $.ui.invalidate('ui.render')
   if (kept.kind === 'loading') void suggest($, kept.turnId, suggestsSkills, { request: lastRequest, answer: '' })
@@ -2188,22 +2233,52 @@ async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): P
             {`🎯 ${shown.goal}`}
           </Text>,
         ]
+  const opened = await read($, openDetail)
+  const detailOf = (item: Suggestion, index: number): RenderElement[] => {
+    if (item.detail === undefined) return []
+    const isOpen = opened === index
+    const toggle = (
+      <Button
+        key={`next-step-detail-${index + 1}`}
+        plain
+        label={isOpen ? '▾ Ẩn chi tiết' : '▸ Chi tiết'}
+        onPress={() => void update($, openDetail, () => (isOpen ? -1 : index)).catch(() => undefined)}
+      />
+    )
+    if (!isOpen) return [toggle]
+    return [
+      toggle,
+      <Box key={`next-step-detail-body-${index + 1}`} flexDirection="column" paddingX={1} minWidth={0}>
+        <Text bold wrap="wrap">
+          {item.detail.title}
+        </Text>
+        {item.detail.points.map((point, at) => (
+          <Text key={`next-step-point-${index + 1}-${at + 1}`} wrap="wrap">
+            {`• ${point}`}
+          </Text>
+        ))}
+      </Box>,
+    ]
+  }
   if (isDesktop) {
     const cardFill = ROW_FILL_CHAR.repeat(Math.max(1, Math.floor((columns - CARD_INSET) * ROW_FILL_PER_COLUMN)))
     return (
       <Box flexDirection="column" gap={1} paddingX={1} minWidth={0}>
         {goalLine}
         {shown.items.map((item, index) => (
-          <Box key={`next-step-row-${index + 1}`} position="relative" flexDirection="column" borderStyle="round" minWidth={0}>
-            <Text key={`next-step-label-${index + 1}`} bold wrap="truncate">
-              {fitLabel(kindLabel(item), room)}
-            </Text>
-            <Text key={`next-step-why-${index + 1}`} dimColor wrap="wrap">
-              {item.why}
-            </Text>
-            <Box key={`next-step-hit-${index + 1}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
-              <Button key={`next-step-${index + 1}`} plain label={cardFill} onPress={() => fillDraft($, item.prompt)} />
+          <Box key={`next-step-item-${index + 1}`} flexDirection="column" minWidth={0}>
+            <Box key={`next-step-row-${index + 1}`} position="relative" flexDirection="column" borderStyle="round" minWidth={0}>
+              <Text key={`next-step-label-${index + 1}`} bold wrap="truncate">
+                {fitLabel(kindLabel(item), room)}
+              </Text>
+              <Text key={`next-step-why-${index + 1}`} dimColor wrap="wrap">
+                {item.why}
+              </Text>
+              <Box key={`next-step-hit-${index + 1}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
+                <Button key={`next-step-${index + 1}`} plain label={cardFill} onPress={() => fillDraft($, item.prompt)} />
+              </Box>
             </Box>
+            {detailOf(item, index)}
           </Box>
         ))}
       </Box>
@@ -2220,6 +2295,7 @@ async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): P
             <Text key={`next-step-why-${index + 1}`} dimColor wrap="wrap">
               {item.why}
             </Text>
+            {detailOf(item, index)}
           </Box>
         </Box>
       ))}

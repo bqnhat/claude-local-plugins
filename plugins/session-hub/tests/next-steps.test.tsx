@@ -600,6 +600,19 @@ describe('shared behaviour', () => {
     expect(w.forkPrompts[0]).not.toContain('starting from their original request')
   })
 
+  test('asks for a detail written for a reader who remembers nothing of the session', async ($, on) => {
+    const w = world(on)
+    await completeTurn($, w)
+
+    expect(w.forkPrompts[0]).toContain('Each suggestion has five fields besides its kind')
+    expect(w.forkPrompts[0]).toContain('- detail: what the user reads on opening the suggestion')
+    expect(w.forkPrompts[0]).toContain('a statement of the one takeaway in at most 60 characters')
+    expect(w.forkPrompts[0]).toContain('"points": 2 to 4 plain Vietnamese sentences, each under 160 characters')
+    expect(w.forkPrompts[0]).toContain('remembers nothing of this session')
+    expect(w.forkPrompts[0]).toContain('Never reuse a name or word you coined during this session unless the user used it too.')
+    expect(w.forkPrompts[0]).toContain('"detail": {"title": "…", "points": ["…", "…"]}')
+  })
+
   test('an empty suggestion list shows nothing and fills no ghost text', async ($, on) => {
     const w = world(on, forkReply([]))
     await completeTurn($, w)
@@ -639,6 +652,78 @@ describe('shared behaviour', () => {
     expect(await whys(ui)).toEqual(['tidy why'])
     await ui.press({ key: 'next-step-1' })
     expect(w.filled).toEqual([{ text: 'run the tests', mode: 'replace' }])
+  })
+})
+
+const DETAILED = forkReply([
+  {
+    ...entry('Run the tests', 'run the tests you just wrote', 'verify'),
+    detail: {
+      title: '**Login tests prove the redirect fix**',
+      points: ['- Runs tests/login.test.ts.', '2. Shows whether the redirect still loops.', 'Third point.', 'Fourth point.', 'Fifth point is dropped.'],
+    },
+  },
+  entry('Review it', '/code-review high', 'dig'),
+  { ...entry('Settings page', 'do the same for the settings page', 'advance'), detail: { title: 'No points here', points: [] } },
+])
+
+const detailToggles = async (ui: Drawn) => (await ui.findAll({ type: 'Button' })).filter(b => /^next-step-detail-\d+$/.test(b.key ?? ''))
+
+describe('suggestion detail', () => {
+  test('a suggestion with a detail gets a toggle that opens its title and points; one without gets none', async ($, on) => {
+    const w = world(on, DETAILED)
+    await completeTurn($, w)
+    const ui = await pane($)
+
+    const toggles = await detailToggles(ui)
+    expect(toggles.map(b => [b.key, b.props.label])).toEqual([['next-step-detail-1', '▸ Chi tiết']])
+    expect(await labels(ui)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
+    await ui.press({ key: 'next-step-detail-1' })
+    await w.clock.settle()
+    await ui.unmount()
+
+    const opened = await pane($)
+    const texts = (await opened.findAll({ type: 'Text' })).map(t => String(t.text))
+    expect(texts).toContain('Login tests prove the redirect fix')
+    expect(texts).toContain('• Runs tests/login.test.ts.')
+    expect(texts).toContain('• Shows whether the redirect still loops.')
+    expect(texts).toContain('• Fourth point.')
+    expect(texts).not.toContain('• Fifth point is dropped.')
+    expect((await detailToggles(opened))[0]?.props.label).toBe('▾ Ẩn chi tiết')
+    await opened.press({ key: 'next-step-detail-1' })
+    await w.clock.settle()
+    await opened.unmount()
+
+    const closed = await pane($)
+    expect((await closed.findAll({ type: 'Text' })).map(t => String(t.text))).not.toContain('Login tests prove the redirect fix')
+    expect(w.filled).toEqual([])
+  })
+
+  test('a new offer closes the open detail', async ($, on) => {
+    const w = world(on, DETAILED)
+    await completeTurn($, w)
+    const ui = await pane($)
+    await ui.press({ key: 'next-step-detail-1' })
+    await w.clock.settle()
+    await ui.unmount()
+
+    await $.turn.start({ text: 'next prompt', turnId: 'turn-2' })
+    await completeTurn($, w, LONG_ANSWER, 'turn-2')
+    const again = await pane($)
+    expect((await again.findAll({ type: 'Text' })).map(t => String(t.text))).not.toContain('Login tests prove the redirect fix')
+    expect((await detailToggles(again))[0]?.props.label).toBe('▸ Chi tiết')
+  })
+
+  test('the critic sees each candidate’s detail', async ($, on) => {
+    const w = world(on, DETAILED, undefined, RANKING)
+    await completeTurn($, w)
+
+    expect(w.criticCalls[0]?.prompt).toContain(
+      '| detail: Login tests prove the redirect fix — Runs tests/login.test.ts. / Shows whether the redirect still loops. / Third point. / Fourth point.',
+    )
+    expect(w.criticCalls[0]?.prompt).toContain('prompt: /code-review high | detail: none')
+    expect(w.criticCalls[0]?.system).toContain('explain any technical term in plain words')
+    expect(w.criticCalls[0]?.system).toContain('the detail title states the takeaway')
   })
 })
 

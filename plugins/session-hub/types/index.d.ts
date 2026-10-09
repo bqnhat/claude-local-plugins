@@ -28,7 +28,8 @@ export type Plan = {
 }
 
 export type SuggestionKind = 'verify' | 'dig' | 'advance' | 'decide'
-export type Suggestion = { kind: SuggestionKind; label: string; why: string; prompt: string }
+export type SuggestionDetail = { title: string; points: string[] }
+export type Suggestion = { kind: SuggestionKind; label: string; why: string; prompt: string; detail?: SuggestionDetail }
 export type View = { kind: 'hidden' } | { kind: 'loading'; turnId: string } | { kind: 'offer'; items: Suggestion[]; goal: string }
 export type OfferRecord = { labels: string[]; picked: number | null }
 
@@ -81,6 +82,7 @@ declare module 'claude-code' {
       section: HubSection
       view: View
       history: OfferRecord[]
+      openDetail: number
       lastRequestAt: number | null
       ttl: CacheTtl | null
       cacheLabel: string
