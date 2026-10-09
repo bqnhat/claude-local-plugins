@@ -24,18 +24,28 @@ function world(on: On): MockClock {
 const flat = (node: unknown): string =>
   typeof node === 'string' ? node : Array.isArray(node) ? node.map(flat).join('') : node !== null && typeof node === 'object' ? flat((node as { children?: unknown }).children ?? []) : ''
 
-const leaves = (node: unknown): string[] => {
-  if (node === null || typeof node !== 'object') return []
-  const one = node as { type?: unknown; children?: unknown }
-  if (one.type === 'Text') return [flat(one)]
-  return Array.isArray(one.children) ? one.children.flatMap(leaves) : []
+const MARK_STATE: Record<string, string> = { '#1D9E75': 'done', '#8B7CF6': 'active', '#E09A1E': 'waiting', '#E5484D': 'failed', '#8A8984': 'pending' }
+
+const markOf = (node: unknown): string => {
+  if (node === null || typeof node !== 'object') return ''
+  const one = node as { type?: unknown; props?: { source?: unknown }; children?: unknown }
+  if (one.type === 'Svg') return MARK_STATE[/fill="(#[0-9A-F]{6})"/.exec(String(one.props?.source))?.[1] ?? ''] ?? '?'
+  return one.type === 'Text' ? flat(one) : ''
 }
 
 async function stepLine($: Engine, key: string): Promise<string> {
   const ui = await $.ui.mount({ plugin: 'session-hub', surface: 'desktop', component: 'Pane', requestId: 'session-hub', props: PANE_PROPS })
   if (!(await ui.find({ type: 'Box', key: 'detail-bar' }))) await ui.press({ key: 'toggle-bar' })
   const row = await ui.find({ type: 'Box', key })
-  const line = leaves(row).join('|')
+  const texts: unknown[] = []
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== 'object') return
+    const one = node as { type?: unknown; children?: unknown }
+    if (one.type === 'Text' || one.type === 'Svg') texts.push(one)
+    else if (Array.isArray(one.children)) one.children.forEach(walk)
+  }
+  walk(row)
+  const line = texts.map((one, i) => (i === 0 ? markOf(one) : flat(one))).join('|')
   await ui.unmount()
   return line
 }
@@ -57,9 +67,9 @@ describe('time on each step', () => {
     await $.tool.call({ tool: TOOL, id: 'bar', next: true })
     await clock.advance(12_000)
 
-    expect(await stepLine($, 'step-bar-0-0')).toBe('✓|First|1m 5s')
-    expect(await stepLine($, 'step-bar-0-1')).toBe('●|Second|12s…')
-    expect(await stepLine($, 'step-bar-1-0')).toBe('○|Third')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('done|First|1m 5s')
+    expect(await stepLine($, 'step-bar-0-1')).toBe('active|Second|12s…')
+    expect(await stepLine($, 'step-bar-1-0')).toBe('pending|Third')
   })
 
   test('a stage adds up its steps, and a step marked done without being started runs from the one before', async ($, on) => {
@@ -69,10 +79,10 @@ describe('time on each step', () => {
     await $.tool.call({ tool: TOOL, id: 'bar', done: ['First', 'Second'], active: 'Third' })
     await clock.advance(5_000)
 
-    expect(await stepLine($, 'step-bar-0-0')).toBe('✓|First|30s')
-    expect(await stepLine($, 'step-bar-0-1')).toBe('✓|Second')
-    expect(await stepLine($, 'stage-bar-0')).toBe('Read|2/2 · 30s')
-    expect(await stepLine($, 'stage-bar-1')).toBe('Ship|0/1 · 5s')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('done|First|30s')
+    expect(await stepLine($, 'step-bar-0-1')).toBe('done|Second')
+    expect(await stepLine($, 'stage-bar-0')).toBe('Read|30s')
+    expect(await stepLine($, 'stage-bar-1')).toBe('Ship|5s')
   })
 
   test('a restructured bar keeps the times of the steps it kept', async ($, on) => {
@@ -87,8 +97,8 @@ describe('time on each step', () => {
       stages: [{ name: 'Read', steps: [{ title: 'First', status: 'done' }, { title: 'Second', status: 'done' }, { title: 'Extra', status: 'active' }] }],
     })
 
-    expect(await stepLine($, 'step-bar-0-0')).toBe('✓|First|40s')
-    expect(await stepLine($, 'step-bar-0-1')).toBe('✓|Second|10s')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('done|First|40s')
+    expect(await stepLine($, 'step-bar-0-1')).toBe('done|Second|10s')
   })
 
   test('an update that leaves the active step in place keeps its start', async ($, on) => {
@@ -98,7 +108,7 @@ describe('time on each step', () => {
     await $.tool.call({ tool: TOOL, id: 'bar', state: 'needs_input', note: 'Which one?' })
     await clock.advance(5_000)
 
-    expect(await stepLine($, 'step-bar-0-0')).toBe('●|First|15s…')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('waiting|First|15s…')
   })
 
   test('a substep keeps its own time under its step', async ($, on) => {
@@ -106,7 +116,7 @@ describe('time on each step', () => {
     await $.tool.call({ tool: TOOL, ...BAR })
     await clock.advance(20_000)
 
-    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('●|Part|20s…')
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('active|Part|20s…')
   })
 
   test('a substep started later than its step counts from its own start', async ($, on) => {
@@ -117,8 +127,8 @@ describe('time on each step', () => {
     await $.tool.call({ tool: TOOL, ...pending, stages: [{ name: 'Read', steps: [{ title: 'First', status: 'active', substeps: [{ title: 'Part', status: 'active' }] }] }] })
     await clock.advance(5_000)
 
-    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('●|Part|5s…')
-    expect(await stepLine($, 'step-bar-0-0')).toBe('●|First|15s…')
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('active|Part|5s…')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('active|First|15s…')
   })
 
   test('next:true finishes the substeps of the step it closes, at the time the step ends', async ($, on) => {
@@ -129,9 +139,9 @@ describe('time on each step', () => {
     await $.tool.call({ tool: TOOL, id: 'bar', next: true })
     await clock.advance(60_000)
 
-    expect(await stepLine($, 'step-bar-0-0')).toBe('✓|First|30s')
-    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('✓|Part|30s')
-    expect(await stepLine($, 'sub-bar-0-0-1')).toBe('✓|Tail')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('done|First|30s')
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('done|Part|30s')
+    expect(await stepLine($, 'sub-bar-0-0-1')).toBe('done|Tail')
   })
 
   test('done and a later active finish the substeps of the steps they close', async ($, on) => {
@@ -155,8 +165,8 @@ describe('time on each step', () => {
     await clock.advance(10_000)
     await $.tool.call({ tool: TOOL, id: 'bar', done: ['Second'], active: 'Third' })
 
-    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('✓|Part|10s')
-    expect(await stepLine($, 'sub-bar-0-1-0')).toBe('✓|Bit|10s')
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('done|Part|10s')
+    expect(await stepLine($, 'sub-bar-0-1-0')).toBe('done|Bit|10s')
   })
 
   test('a substep closed after its step never shows more time than the step', async ($, on) => {
@@ -168,8 +178,8 @@ describe('time on each step', () => {
     await clock.advance(240_000)
     await $.tool.call({ tool: TOOL, id: 'bar', state: 'done' })
 
-    expect(await stepLine($, 'step-bar-0-0')).toBe('✓|First|24s')
-    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('✓|Part|24s')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('done|First|24s')
+    expect(await stepLine($, 'sub-bar-0-0-0')).toBe('done|Part|24s')
   })
 
   test('a step sent back to pending loses its times', async ($, on) => {
@@ -179,6 +189,6 @@ describe('time on each step', () => {
     await $.tool.call({ tool: TOOL, id: 'bar', next: true })
     await $.tool.call({ tool: TOOL, id: 'bar', stages: [{ name: 'Read', steps: [{ title: 'First', status: 'pending' }, { title: 'Second', status: 'active' }] }] })
 
-    expect(await stepLine($, 'step-bar-0-0')).toBe('○|First')
+    expect(await stepLine($, 'step-bar-0-0')).toBe('pending|First')
   })
 })

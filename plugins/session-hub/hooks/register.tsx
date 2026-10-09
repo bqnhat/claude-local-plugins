@@ -139,24 +139,31 @@ const PANE_AGENT_TICK_MS = 5000
 const AGENT_POLL_MS = 5000
 const SOUND_GAP_MS = 2000
 const ASKED_MS = 60_000
-const PLAN_RING = 22
+const PLAN_RING = 24
 const SEG_H = 4
 const SEG_W = 1400
 const SEG_GAP = 2
 const STAGE_GAP = 5
 const DETAIL_INDENT = 5
 const CHEVRON = 12
-const CHEVRON_FILL = ' '.repeat(4)
-const GREEN = '#30A46C'
+const CHEVRON_FILL = ' '.repeat(3)
+const GREEN = '#1D9E75'
 const ORANGE = '#E09A1E'
 const PURPLE = '#8B7CF6'
 const RED = '#E5484D'
 const QUIET = '#8A8984'
+const DEEP_GREEN = { light: '#1E7A3D', dark: '#5CC483' }
+const DEEP_RED = { light: '#8E2626', dark: '#F28B86' }
+const DEEP_AMBER = { light: '#BA7517', dark: '#E8A548' }
+const DEEP_PURPLE = { light: '#4B3DB0', dark: '#B5A9FF' }
+const TONE: Record<string, { light: string; dark: string }> = { [GREEN]: DEEP_GREEN, [RED]: DEEP_RED, [ORANGE]: DEEP_AMBER, [PURPLE]: DEEP_PURPLE }
+const toneOf = (color: string) => TONE[color] ?? { light: color, dark: color }
+const toneRule = (selector: string, prop: 'fill' | 'stroke', color: string) => themeStyle(`${selector}{${prop}:${toneOf(color).light}}`, `${selector}{${prop}:${toneOf(color).dark}}`)
 const HOVER_BG = '#8080801f'
-const TEXT_INK: Record<string, string> = { [GREEN]: 'success', [ORANGE]: 'warning' }
+const TEXT_INK: Record<string, string> = { [GREEN]: 'success', [ORANGE]: 'warning', [RED]: 'error' }
 const ink = (color: string) => TEXT_INK[color] ?? color
 const ROW_FILL_CHAR = ' '
-const ROW_FILL_PER_COLUMN = 3.5
+const ROW_FILL_PER_COLUMN = 1.6
 
 const STATE_COLOR: Record<PlanState, string> = { running: PURPLE, needs_input: ORANGE, error: RED, done: GREEN }
 const STATE_GLYPH: Record<PlanState, string> = { running: '●', needs_input: '?', error: '!', done: '✓' }
@@ -457,12 +464,53 @@ function plural(n: number, word: string) {
 const percent = (p: Plan, w: Where) => (p.state === 'done' ? 100 : Math.round((Math.min(w.pos, w.total) / Math.max(1, w.total)) * 100))
 
 const ICON_PATH: Partial<Record<PlanState, string>> = {
-  needs_input: 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01',
+  needs_input: 'M9.2 9.2a2.9 2.9 0 1 1 4 2.7c-.7.3-1.2.9-1.2 1.7v.4M12 17.6h.01',
   error: 'M18 6 6 18M6 6l12 12',
   done: 'M20 6 9 17l-5-5',
 }
 
 const endOf = (p: Plan, now: number) => (p.state === 'done' ? touchedAt(p) : now)
+
+const PLAN_ICON = 22
+
+function planIconSvg(p: Plan, pct: number): string {
+  const icon = ICON_PATH[p.state]
+  if (p.state === 'running' || !icon) return planRingSvg(p, pct)
+  const n = PLAN_RING
+  const color = STATE_COLOR[p.state]
+  const s = 0.5
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 ${n} ${n}">${toneRule('.x', 'stroke', color)}<circle cx="${n / 2}" cy="${n / 2}" r="${PLAN_ICON / 2}" fill="${color}" fill-opacity=".22"/><path d="${icon}" transform="translate(${n / 2 - 12 * s} ${n / 2 - 12 * s}) scale(${s})" fill="none" class="x" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+}
+
+const CHIP_H = 16
+
+function chipSvg(word: string, color: string): { source: string; width: number } {
+  const width = Math.ceil(textWidth(word, 12) + 14)
+  return {
+    source: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${CHIP_H}" viewBox="0 0 ${width} ${CHIP_H}">${toneRule('.chip', 'fill', color)}<rect width="${width}" height="${CHIP_H}" rx="5" fill="${color}" fill-opacity=".22"/><text x="${width / 2}" y="12" ${SVG_FONT} font-size="12" text-anchor="middle" class="chip">${xmlText(word)}</text></svg>`,
+    width,
+  }
+}
+
+const NOTE_ICON = 14
+const NOTE_PATH: Record<PlanState, string> = {
+  error: '<path d="M7 1.6 13 12.2H1L7 1.6z"/><path d="M7 5.6v3"/><circle cx="7" cy="10.2" r=".3"/>',
+  needs_input: '<circle cx="7" cy="7" r="5.6"/><path d="M5.4 5.4a1.7 1.7 0 0 1 3.2.6c0 1.1-1.6 1.5-1.6 1.5"/><circle cx="7" cy="10" r=".3"/>',
+  running: '<circle cx="7" cy="7" r="5.6"/><path d="M7 6.4v3.4"/><circle cx="7" cy="4.4" r=".3"/>',
+  done: '<circle cx="7" cy="7" r="5.6"/><path d="m4.6 7.2 1.7 1.7 3.2-3.4"/>',
+}
+
+function noteIconSvg(state: PlanState): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${NOTE_ICON}" height="${NOTE_ICON}" viewBox="0 0 14 14">${toneRule('.n', 'stroke', STATE_COLOR[state])}<g fill="none" class="n" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${NOTE_PATH[state]}</g></svg>`
+}
+
+function titleSvg(text: string): { source: string; width: number } {
+  const width = Math.ceil(textWidth(text, 15) + 8)
+  return {
+    source: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20" viewBox="0 0 ${width} 20">${inkStyle}<text x="0" y="15" ${SVG_FONT} font-size="15" font-weight="650" class="ink">${xmlText(text)}</text></svg>`,
+    width,
+  }
+}
 
 function planRingSvg(p: Plan, pct: number): string {
   const r = (PLAN_RING - 6) / 2
@@ -472,6 +520,11 @@ function planRingSvg(p: Plan, pct: number): string {
   const at = PLAN_RING / 2 - 5
   const mark = icon ? `<path d="${icon}" transform="translate(${at} ${at}) scale(.42)" fill="none" stroke="${color}" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PLAN_RING}" height="${PLAN_RING}" viewBox="0 0 ${PLAN_RING} ${PLAN_RING}"><circle cx="${PLAN_RING / 2}" cy="${PLAN_RING / 2}" r="${r}" fill="none" stroke="${QUIET}" stroke-opacity=".3" stroke-width="3"/><circle cx="${PLAN_RING / 2}" cy="${PLAN_RING / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${((pct / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${PLAN_RING / 2} ${PLAN_RING / 2})"/>${mark}</svg>`
+}
+
+function stepDotSvg(status: StepStatus, live: string): string {
+  const faint = status === 'pending' || status === 'skipped' ? ' fill-opacity=".45"' : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${STEP_DOT}" height="${STEP_DOT}" viewBox="0 0 6 6"><circle cx="3" cy="3" r="2.5" fill="${stepColor(status, live)}"${faint}/></svg>`
 }
 
 function chevronSvg(isOpen: boolean): string {
@@ -559,7 +612,9 @@ function agentCounts(agents: readonly AgentRun[]): string {
 }
 
 const STEP_GLYPH: Record<StepStatus, string> = { done: '✓', active: '●', pending: '○', error: '!', skipped: '–' }
-const STAGE_NODE = 14
+const STAGE_NODE = 16
+const STEP_DOT = 6
+const TIMELINE_LINE = '#80808062'
 const STATE_CHIP: Record<PlanState, string> = { running: 'Running', needs_input: 'Waiting', error: 'Failed', done: 'Done' }
 
 type StageState = 'done' | 'error' | 'active' | 'pending'
@@ -572,19 +627,19 @@ function stageStateOf(s: PlanStage): StageState {
 }
 
 function stageNodeSvg(state: StageState, live: string): string {
-  const n = STAGE_NODE
+  const n = 14
   const c = n / 2
-  const halo = (color: string) => `<circle cx="${c}" cy="${c}" r="${c}" fill="${color}" fill-opacity=".18"/>`
-  const stroke = (color: string, d: string) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`
+  const halo = (color: string, opacity = '.22') => `<circle cx="${c}" cy="${c}" r="${c}" fill="${color}" fill-opacity="${opacity}"/>`
+  const stroke = (color: string, d: string) => `${toneRule('.m', 'stroke', color)}<path d="${d}" fill="none" class="m" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`
   const inner =
     state === 'done'
-      ? halo(STATE_COLOR.done) + stroke(STATE_COLOR.done, 'M4.2 7.2 6.2 9.2 9.9 5.2')
+      ? halo(WARM_TINT, '.27') + stroke(STATE_COLOR.done, 'M4.2 7.2 6.2 9.2 9.9 5.2')
       : state === 'error'
-        ? halo(STATE_COLOR.error) + stroke(STATE_COLOR.error, 'M7 3.8v3.6') + `<circle cx="7" cy="10.1" r=".95" fill="${STATE_COLOR.error}"/>`
+        ? halo(STATE_COLOR.error) + stroke(STATE_COLOR.error, 'M7 3.8v3.6') + `${toneRule('.d', 'fill', STATE_COLOR.error)}<circle class="d" cx="7" cy="10.1" r=".8"/>`
         : state === 'active'
           ? halo(live) + `<circle cx="${c}" cy="${c}" r="2.6" fill="${live}"/>`
           : `<circle cx="${c}" cy="${c}" r="${c - 0.8}" fill="none" stroke="${QUIET}" stroke-opacity=".5" stroke-width="1.2"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 ${n} ${n}">${inner}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${STAGE_NODE}" height="${STAGE_NODE}" viewBox="0 0 ${n} ${n}">${inner}</svg>`
 }
 
 // ---------- engine glue ----------
@@ -1229,27 +1284,45 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const isLive = item.status === 'active' || item.status === 'error'
     const took = shownTime(times.items.get(item) ?? '', now)
     const mark = STEP_GLYPH[item.status]
-    const glyph = item.status === 'pending' ? <Text dimColor>{mark}</Text> : <Text color={ink(stepColor(item.status, tint))}>{mark}</Text>
-    const title =
-      isTimeline && item.status === 'error' ? (
-        <Text bold color={ink(STATE_COLOR.error)} wrap="truncate">
+    const glyph =
+      isTimeline && Svg ? (
+        <Svg source={stepDotSvg(item.status, tint)} alt="" width={STEP_DOT} height={STEP_DOT} />
+      ) : item.status === 'pending' ? (
+        <Text dimColor>{mark}</Text>
+      ) : (
+        <Text color={ink(stepColor(item.status, tint))}>{mark}</Text>
+      )
+    const title = isTimeline ? (
+      item.status === 'error' ? (
+        <Text color={ink(STATE_COLOR.error)} wrap="truncate">
           {item.title}
         </Text>
       ) : (
-        <Text bold={isLive} dimColor={!isLive} wrap="truncate">
+        <Text bold={item.status === 'active'} dimColor={item.status === 'pending' || item.status === 'skipped'} strikethrough={item.status === 'skipped'} wrap="truncate">
           {item.title}
         </Text>
       )
+    ) : (
+      <Text bold={isLive} dimColor={!isLive} wrap="truncate">
+        {item.title}
+      </Text>
+    )
 
     return (
-      <Box key={key} flexDirection="row" gap={1} marginLeft={depth * 2} minWidth={0}>
-        <Box key={`${key}-mark`} width={1} flexShrink={0} justifyContent="center">
+      <Box key={key} flexDirection="row" gap={isTimeline ? 0.75 : 1} marginLeft={depth * 2} minWidth={0}>
+        <Box key={`${key}-mark`} width={isTimeline ? 0.75 : 1} flexShrink={0} justifyContent="center" alignItems="center">
           {glyph}
         </Box>
         <Box flexGrow={1} minWidth={0}>
           {title}
         </Box>
-        {took ? [<Text key={`${key}-time`} dimColor>{took}</Text>] : []}
+        {took
+          ? [
+              <Box key={`${key}-time`} flexShrink={0}>
+                <Text dimColor>{took}</Text>
+              </Box>,
+            ]
+          : []}
       </Box>
     )
   }
@@ -1264,7 +1337,9 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
             Agents
           </Text>
         </Box>
-        <Text dimColor>{agentCounts(agents)}</Text>
+        <Box flexShrink={0}>
+          <Text dimColor>{agentCounts(agents)}</Text>
+        </Box>
       </Box>,
       ...agents.map(a => (
         <Box key={`agent-${p.id}-${a.id}`} flexDirection="row" gap={1} marginLeft={a.depth * 2} minWidth={0}>
@@ -1274,8 +1349,10 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
               {a.title}
             </Text>
           </Box>
-          <Text dimColor>{a.tool}</Text>
-          <Text dimColor>{elapsed((a.endedAt ?? now) - a.startedAt)}</Text>
+          <Box flexDirection="row" columnGap={1} flexShrink={0}>
+            <Text dimColor>{a.tool}</Text>
+            <Text dimColor>{elapsed((a.endedAt ?? now) - a.startedAt)}</Text>
+          </Box>
         </Box>
       )),
     ]
@@ -1287,36 +1364,48 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const times = timesOf(p)
     const took = span(endOf(p, now) - p.startedAt)
     const isSingle = p.stages.length === 1
+    const isTimeline = Svg !== null && p.id !== AGENTS && !isSingle
+    const finishedSteps = p.stages.flatMap(s => s.steps).filter(step => isFinished(step.status)).length
+    const chip = Svg && p.id !== AGENTS ? chipSvg(STATE_CHIP[p.state], color) : null
+    const meta = Svg
+      ? `Bắt đầu ${clockTime(p.startedAt)}${p.state === 'done' ? ` · xong ${clockTime(touchedAt(p))}` : ''}${p.id === AGENTS ? ` · ${overview(p, w)}` : ` · ${finishedSteps}/${w.total} bước`}`
+      : `Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${took ? ` · ${took}` : ''}`
+    const hideWord = Svg ? (p.hidden ? 'Hiện lại' : 'Ẩn') : p.hidden ? 'Show again' : 'Hide'
 
     return (
-      <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={DETAIL_INDENT} marginRight={1} marginBottom={1} minWidth={0}>
+      <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={Svg ? 1 : DETAIL_INDENT} marginRight={1} marginTop={Svg ? 0.5 : 0} marginBottom={1} minWidth={0}>
         <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" columnGap={1} minWidth={0}>
-          {Svg && p.id !== AGENTS
-            ? [
-                <Box key={`chip-${p.id}`} paddingX={1} flexShrink={0} backgroundColor={tint(color)}>
-                  <Text color={ink(color)}>{STATE_CHIP[p.state]}</Text>
-                </Box>,
-              ]
-            : []}
+          {Svg && chip ? [<Svg key={`chip-${p.id}`} source={chip.source} alt={STATE_CHIP[p.state]} width={chip.width} height={CHIP_H} />] : []}
           <Box flexGrow={1} minWidth={0}>
-            <Text dimColor wrap="truncate">{`Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${took ? ` · ${took}` : ''}`}</Text>
+            <Text dimColor wrap="truncate">
+              {meta}
+            </Text>
           </Box>
-          {p.hidden ? (
-            <Button key={`close-${p.id}`} plain dimColor label="Show again" onPress={() => unhidePlan($, p.id)} />
-          ) : (
-            <Button key={`close-${p.id}`} plain dimColor label="Hide" onPress={() => hidePlan($, p.id)} />
-          )}
+          <Button key={`close-${p.id}`} plain dimColor label={hideWord} onPress={() => (p.hidden ? unhidePlan($, p.id) : hidePlan($, p.id))} />
         </Box>
         {p.note
           ? [
-              <Box key={`note-${p.id}`} paddingX={1} marginTop={1} backgroundColor={`${color}26`}>
-                <Text color={ink(color)} wrap="wrap">
-                  {p.note}
-                </Text>
-              </Box>,
+              Svg ? (
+                <Box key={`note-${p.id}`} flexDirection="row" alignItems="flex-start" columnGap={0.75} marginTop={1} paddingX={1} paddingY={0.25} borderStyle="round" borderColor={`${color}00`} backgroundColor={`${color}38`} minWidth={0}>
+                  <Box key={`note-icon-${p.id}`} paddingTop={0.25} flexShrink={0}>
+                    <Svg source={noteIconSvg(p.state)} alt="" width={NOTE_ICON} height={NOTE_ICON} />
+                  </Box>
+                  <Box flexGrow={1} minWidth={0}>
+                    <Text color={ink(color)} wrap="wrap">
+                      {p.note}
+                    </Text>
+                  </Box>
+                </Box>
+              ) : (
+                <Box key={`note-${p.id}`} paddingX={1} marginTop={1} backgroundColor={`${color}26`}>
+                  <Text color={ink(color)} wrap="wrap">
+                    {p.note}
+                  </Text>
+                </Box>
+              ),
             ]
           : []}
-        {Svg && p.id !== AGENTS
+        {Svg && p.id !== AGENTS && !isTimeline
           ? [
               <Box key={`steps-${p.id}`} marginTop={1}>
                 <Svg source={stepsSvg(p)} alt={`${p.title}: ${Math.min(w.pos, w.total)}/${w.total} steps`} height={SEG_H} />
@@ -1325,7 +1414,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
           : []}
         {p.id === AGENTS
           ? []
-          : Svg && !isSingle
+          : Svg && isTimeline
             ? p.stages.map((s, i) => {
                 const finished = s.steps.filter(step => isFinished(step.status)).length
                 const stageTime = shownTime(times.stages[i] ?? '', now)
@@ -1334,23 +1423,20 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
                 return (
                   <Box key={`stage-block-${p.id}-${i}`} flexDirection="row" alignItems="stretch" columnGap={1} marginTop={i === 0 ? 1 : 0} minWidth={0}>
                     <Box key={`stage-rail-${p.id}-${i}`} flexDirection="column" alignItems="center" width={2} flexShrink={0}>
+                      <Box key={`stage-stub-${p.id}-${i}`} height={0.25} width={0.15} {...(i === 0 ? {} : { backgroundColor: TIMELINE_LINE })} />
                       <Svg source={stageNodeSvg(state, color)} alt={`${s.name}: ${STAGE_WORD[state]}`} width={STAGE_NODE} height={STAGE_NODE} />
-                      {isLast ? [] : [<Box key={`stage-line-${p.id}-${i}`} flexGrow={1} width={0.1} backgroundColor={DIVIDER} />]}
+                      <Box key={`stage-line-${p.id}-${i}`} flexGrow={1} width={0.15} marginBottom={isLast && s.steps.length > 0 ? 1.2 : 0} backgroundColor={TIMELINE_LINE} />
                     </Box>
                     <Box key={`stage-body-${p.id}-${i}`} flexDirection="column" flexGrow={1} minWidth={0} paddingBottom={isLast ? 0 : 1}>
-                      <Box key={`stage-${p.id}-${i}`} flexDirection="row" minWidth={0}>
+                      <Box key={`stage-${p.id}-${i}`} flexDirection="row" columnGap={1} minWidth={0}>
                         <Box flexGrow={1} minWidth={0}>
-                          {state === 'error' ? (
-                            <Text bold color={ink(STATE_COLOR.error)} wrap="truncate">
-                              {s.name}
-                            </Text>
-                          ) : (
-                            <Text bold wrap="truncate">
-                              {s.name}
-                            </Text>
-                          )}
+                          <Text bold wrap="truncate">
+                            {s.name}
+                          </Text>
                         </Box>
-                        <Text dimColor>{`${finished}/${s.steps.length}${stageTime ? ` · ${stageTime}` : ''}`}</Text>
+                        <Box flexShrink={0}>
+                          <Text dimColor>{stageTime || `${finished}/${s.steps.length}`}</Text>
+                        </Box>
                       </Box>
                       {s.steps.flatMap((step, j) => [
                         stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times, true),
@@ -1372,14 +1458,16 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
                           {s.name}
                         </Text>
                       </Box>
-                      <Text dimColor>{`${finished}/${s.steps.length}${stageTime ? ` · ${stageTime}` : ''}`}</Text>
+                      <Box flexShrink={0}>
+                        <Text dimColor>{`${finished}/${s.steps.length}${stageTime ? ` · ${stageTime}` : ''}`}</Text>
+                      </Box>
                     </Box>,
                   ]
               return [
                 ...head,
                 ...s.steps.flatMap((step, j) => [
-                  stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times),
-                  ...step.substeps.map((sub, k) => stepRow(sub, `sub-${p.id}-${i}-${j}-${k}`, 1, color, times)),
+                  stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times, Svg !== null),
+                  ...step.substeps.map((sub, k) => stepRow(sub, `sub-${p.id}-${i}-${j}-${k}`, 1, color, times, Svg !== null)),
                 ]),
               ]
             })}
@@ -1396,7 +1484,8 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const isAlert = p.state === 'needs_input' || p.state === 'error'
     const toggle = () => toggleBubble($, p.id)
     const took = shortSpan(endOf(p, now) - p.startedAt)
-    const mark = isCompact || !Svg ? <Text color={ink(color)}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planRingSvg(p, pct)} alt={`${p.title} ${pct}% · ${STATE_WORD[p.state]}`} width={PLAN_RING} height={PLAN_RING} />
+    const mark = isCompact || !Svg ? <Text color={ink(color)}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planIconSvg(p, pct)} alt={`${p.title} ${pct}% · ${STATE_WORD[p.state]}`} width={PLAN_RING} height={PLAN_RING} />
+    const isQuiet = p.state === 'done' || p.hidden === true
     const right = isCompact ? clockTime(touchedAt(p)) : took
     const line = isAlert ? (
       <Text key={`line-${p.id}`} color={ink(color)} wrap="truncate">
@@ -1415,14 +1504,20 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
           <Box key={`top-${p.id}`} flexDirection="row" alignItems="center" gap={1} minWidth={0}>
             <Box flexGrow={1} minWidth={0}>
               {isDesktop ? (
-                <Text key={`title-${p.id}`} dimColor={p.state === 'done' || p.hidden === true} wrap="truncate">
+                <Text key={`title-${p.id}`} bold={Svg !== null && !isQuiet && !isCompact} dimColor={isQuiet} wrap="truncate">
                   {p.title}
                 </Text>
               ) : (
                 <Button key={`toggle-${p.id}`} plain dimColor={p.state === 'done'} label={p.title} onPress={toggle} />
               )}
             </Box>
-            {right ? [<Text key={`right-${p.id}`} dimColor>{right}</Text>] : []}
+            {right
+              ? [
+                  <Box key={`right-${p.id}`} flexShrink={0}>
+                    <Text dimColor>{right}</Text>
+                  </Box>,
+                ]
+              : []}
             {Svg ? (
               <Box key={`chevron-box-${p.id}`} position="relative" flexShrink={0}>
                 <Svg key={`chevron-mark-${p.id}`} source={chevronSvg(isWide)} alt={isWide ? 'Fold' : 'Open'} width={CHEVRON} height={CHEVRON} />
@@ -1434,7 +1529,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
               <Button key={`chevron-${p.id}`} plain dimColor label={isWide ? '▾' : '▸'} onPress={toggle} />
             )}
           </Box>
-          {isCompact || (isWide && p.state === 'done') ? [] : [line]}
+          {isCompact || (isWide && (Svg !== null || p.state === 'done')) ? [] : [line]}
         </Box>
         {isDesktop ? (
           <Box key={`hit-${p.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
@@ -1450,7 +1545,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
 
   return (
     <Box flexDirection="column">
-      {live.length > 0 ? [heading('live-head', `Active · ${live.length}`, 0), ...live.flatMap(p => row(p, false))] : []}
+      {live.length > 0 ? [...(Svg ? [] : [heading('live-head', `Active · ${live.length}`, 0)]), ...live.flatMap(p => row(p, false))] : []}
       {done.length > 0
         ? [
             heading('done-head', `Done · ${done.length}`, live.length > 0 ? 1 : 0, [<Button key="hide-done" plain dimColor label="Hide all" onPress={() => hideDone($)} />]),
@@ -2476,16 +2571,112 @@ const CACHE_DOT = '●'
 
 const MAX_SAMPLES = 2000
 const CHART_TURNS = 12
-const CHART_H = 150
+const CHART_H = 116
 const READ_COLOR = GREEN
 const WRITE_COLOR = ORANGE
-const FRESH_COLOR = PURPLE
+const FRESH_COLOR = '#7F77DD'
 const LOW_COLOR = RED
+const READ_TILE = { light: READ_COLOR, dark: '#3DC49A' }
+const FRESH_TILE = { light: FRESH_COLOR, dark: '#A49CF0' }
 const AXIS_COLOR = QUIET
 const TRACK_COLOR = '#8080802e'
-const TILE_BG = '#8080801a'
-const TAB_BG = '#80808033'
-const tint = (color: string) => `${color}24`
+const TILE_BG = '#80808012'
+const LATEST_BG = '#80808008'
+const WARM_TINT = '#3BB130'
+const tintStrong = (color: string) => `${color}45`
+const HIT_BAR_W = 20
+const LAST_BAR_H = 4
+const CELL_PX = 8
+const STRETCH_W = 1400
+const FOOTER_BAR_H = 3
+const CLOCK_ICON = 11
+const SVG_FONT = `font-family="system-ui, 'Segoe UI', -apple-system, sans-serif"`
+const INK = { light: '#1F1E1D', dark: '#ECEBE6' }
+const SOFT_INK = { light: '#73726C', dark: '#9D9B94' }
+const themeStyle = (light: string, dark: string) => `<style>${light}@media (prefers-color-scheme: dark){${dark}}</style>`
+const inkStyle = themeStyle(`.ink{fill:${INK.light}}.soft{fill:${SOFT_INK.light}}.amber{fill:${DEEP_AMBER.light}}`, `.ink{fill:${INK.dark}}.soft{fill:${SOFT_INK.dark}}.amber{fill:${DEEP_AMBER.dark}}`)
+const FOOTER_TRACK_STYLE = themeStyle('.track{fill:#FFFFFF}', '.track{fill:#FFFFFF24}')
+const RING_STYLE = themeStyle('.ring{stroke:#FFFFFF}', '.ring{stroke:#262624}')
+const widthOf = (columns: number) => Math.min(STRETCH_W, Math.max(160, Math.floor(columns * CELL_PX)))
+
+function clockIconSvg(color: string): string {
+  const n = CLOCK_ICON
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 14 14">${toneRule('.clk', 'stroke', color)}<circle cx="7" cy="7" r="5.8" fill="none" class="clk" stroke-width="1.7"/><path d="M7 4.1v3.1l2 1.2" fill="none" class="clk" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+}
+
+type TileSpec = { label: string; value: string; sub?: string; dot?: string; color: string | { light: string; dark: string }; isGood?: boolean }
+
+const TILE = { pad: 8, padY: 6.5, gap: 6, sign: 4, label: 12.5, value: 16.5, sub: 11.5, line: 14, valueLine: 18, radius: 8 }
+const xmlText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const textWidth = (s: string, size: number) => [...s].reduce((w, ch) => w + (ch === ' ' ? 0.28 : /[ilI.,·:;|!1]/.test(ch) ? 0.3 : /[mwMW]/.test(ch) ? 0.85 : /[A-Z]/.test(ch) ? 0.66 : 0.5) * size, 0)
+
+function wrapWords(text: string, size: number, room: number): string[] {
+  const lines: string[] = []
+  for (const word of text.split(' ')) {
+    const tail = lines[lines.length - 1]
+    if (tail !== undefined && textWidth(`${tail} ${word}`, size) <= room) lines[lines.length - 1] = `${tail} ${word}`
+    else lines.push(word)
+  }
+  return lines
+}
+
+function tileRowSvg(tiles: readonly TileSpec[], signs: readonly string[], W: number): { source: string; height: number } {
+  const t = TILE
+  const tileW = (W - signs.length * t.sign - (tiles.length + signs.length - 1) * t.gap) / tiles.length
+  const laid = tiles.map(one => {
+    const room = tileW - 2 * t.pad - (one.dot ? 11 : 0)
+    const lines = wrapWords(one.label, t.label, room)
+    const height = t.padY * 2 + lines.length * t.line + t.valueLine + (one.sub ? t.line : 0)
+    return { one, lines, height }
+  })
+  const H = Math.max(...laid.map(l => l.height))
+  const tones = tiles.map((one, i) => (typeof one.color === 'string' ? null : { at: i, tone: one.color }))
+  const styles = [
+    `.ink{fill:${INK.light}}.soft{fill:${SOFT_INK.light}}.good{fill:${DEEP_GREEN.light}}.card{fill:#80808007}${tones.map(v => (v ? `.v${v.at}{fill:${v.tone.light}}` : '')).join('')}`,
+    `.ink{fill:${INK.dark}}.soft{fill:${SOFT_INK.dark}}.good{fill:${DEEP_GREEN.dark}}.card{fill:#80808024}${tones.map(v => (v ? `.v${v.at}{fill:${v.tone.dark}}` : '')).join('')}`,
+  ]
+  let x = 0
+  const parts: string[] = []
+  laid.forEach(({ one, lines, height }, i) => {
+    const top = (H - height) / 2
+    const words = one.isGood ? 'class="good"' : 'class="ink"'
+    const value = typeof one.color === 'string' ? `fill="${one.color}"` : `class="v${i}"`
+    const card = one.isGood
+      ? `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${tileW.toFixed(1)}" height="${height}" rx="${t.radius}" fill="${WARM_TINT}" fill-opacity=".27"/>`
+      : `<rect class="card" x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${tileW.toFixed(1)}" height="${height}" rx="${t.radius}"/>`
+    const textX = x + t.pad + (one.dot ? 11 : 0)
+    let y = top + t.padY + 12
+    const dot = one.dot ? `<circle cx="${(x + t.pad + 3.5).toFixed(1)}" cy="${(y - 4 + ((lines.length - 1) * t.line) / 2).toFixed(1)}" r="3" fill="${one.dot}"/>` : ''
+    const label = lines.map((line, k) => `<text x="${textX.toFixed(1)}" y="${(y + k * t.line).toFixed(1)}" ${SVG_FONT} font-size="${t.label}" ${words}>${xmlText(line)}</text>`).join('')
+    y += (lines.length - 1) * t.line + t.valueLine
+    const big = `<text x="${(x + t.pad).toFixed(1)}" y="${y.toFixed(1)}" ${SVG_FONT} font-size="${t.value}" font-weight="650" ${value}>${xmlText(one.value)}</text>`
+    const sub = one.sub ? `<text x="${(x + t.pad).toFixed(1)}" y="${(y + t.line).toFixed(1)}" ${SVG_FONT} font-size="${t.sub}" ${words}>${xmlText(one.sub)}</text>` : ''
+    parts.push(card + dot + label + big + sub)
+    x += tileW + t.gap
+    const sign = signs[i]
+    if (sign !== undefined) {
+      parts.push(`<text x="${(x + t.sign / 2).toFixed(1)}" y="${(H / 2 + 4).toFixed(1)}" ${SVG_FONT} font-size="13" text-anchor="middle" class="ink">${xmlText(sign)}</text>`)
+      x += t.sign + t.gap
+    }
+  })
+  return { source: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${themeStyle(styles[0], styles[1])}${parts.join('')}</svg>`, height: H }
+}
+
+const TAB_W = 56
+const TAB_H = 24
+const TAB_CELLS = TAB_W / CELL_PX
+const TAB_FILL = ' '.repeat(12)
+
+function tabsSvg(labels: readonly string[], selected: number): string {
+  const W = TAB_W * labels.length
+  const style = themeStyle(
+    `.track{fill:#80808007}.pill{fill:#FFFFFF;stroke:#8080803d}.on{fill:${INK.light}}.off{fill:${SOFT_INK.light}}`,
+    `.track{fill:#8080801f}.pill{fill:#3A3A37;stroke:#80808059}.on{fill:${INK.dark}}.off{fill:${SOFT_INK.dark}}`,
+  )
+  const pill = `<rect class="pill" x="${selected * TAB_W + 1.5}" y="2.5" width="${TAB_W - 3}" height="${TAB_H - 5}" rx="6"/>`
+  const words = labels.map((label, i) => `<text class="${i === selected ? 'on' : 'off'}" x="${i * TAB_W + TAB_W / 2}" y="${TAB_H / 2 + 4.5}" ${SVG_FONT} font-size="12" text-anchor="middle">${label}</text>`).join('')
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${TAB_H}" viewBox="0 0 ${W} ${TAB_H}">${style}<rect class="track" width="${W}" height="${TAB_H}" rx="8"/>${pill}${words}</svg>`
+}
 const READ_SAVING = 0.9
 const READ_SAVING_BY_MODEL: readonly (readonly [string, number])[] = [
   ['claude-fable-5-1', 0.975],
@@ -2502,7 +2693,7 @@ type CacheTurn = TokenSplit & { turn: number; at: number; steps: number }
 const promptOf = (t: TokenSplit) => t.read + t.write + t.fresh
 const sumTokens = (list: readonly TokenSplit[]): TokenSplit => list.reduce((sum, t) => ({ read: sum.read + t.read, write: sum.write + t.write, fresh: sum.fresh + t.fresh }), { read: 0, write: 0, fresh: 0 })
 const hitOf = (t: TokenSplit) => (promptOf(t) === 0 ? 0 : Math.round((t.read / promptOf(t)) * 100))
-const hitColor = (pct: number) => (pct >= 80 ? READ_COLOR : pct >= 40 ? WRITE_COLOR : LOW_COLOR)
+const hitColor = (pct: number) => (pct >= 90 ? READ_COLOR : pct >= 40 ? WRITE_COLOR : LOW_COLOR)
 
 function tokens(n: number): string {
   if (n < 1000) return String(Math.round(n))
@@ -2549,58 +2740,77 @@ function niceMax(v: number): number {
   return (scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10) * step
 }
 
-const svgText = (x: number, y: number, text: string, anchor: 'start' | 'middle' | 'end', color = AXIS_COLOR) =>
-  `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="10" font-family="sans-serif" text-anchor="${anchor}" fill="${color}">${text}</text>`
-
-const gridLine = (x1: number, x2: number, y: number, isBase = false) =>
-  `<line x1="${x1}" x2="${x2}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${AXIS_COLOR}" stroke-opacity="${isBase ? '.45' : '.25'}"${isBase ? '' : ' stroke-dasharray="3 3"'}/>`
-
-const axisOf = (L: number, R: number, max: number, y: (v: number) => number) => [0, max / 2, max].map(v => gridLine(L, R, y(v), v === 0) + svgText(L - 6, y(v) + 3, tokens(v), 'end')).join('')
+const HIT_BAR_H = 4
 
 function hitBarSvg(pct: number): string {
-  const W = 18
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="4" viewBox="0 0 ${W} 4"><rect width="${W}" height="4" rx="2" fill="${TRACK_COLOR}"/><rect width="${Math.max(2, (pct / 100) * W).toFixed(1)}" height="4" rx="2" fill="${hitColor(pct)}"/></svg>`
+  const W = HIT_BAR_W
+  const H = HIT_BAR_H
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${Math.max(3, (pct / 100) * W).toFixed(1)}" height="${H}" rx="${H / 2}" fill="${hitColor(pct)}"/></svg>`
 }
 
-function lastBarSvg(s: TokenSplit, W: number): string {
+const SWATCH: Record<'square' | 'line' | 'dot', { width: number; shape: (color: string) => string }> = {
+  square: { width: 8, shape: color => `<rect width="8" height="8" rx="1.5" fill="${color}"/>` },
+  line: { width: 10, shape: color => `<rect y="2.75" width="10" height="2.5" rx="1.25" fill="${color}"/>` },
+  dot: { width: 6, shape: color => `<circle cx="3" cy="4" r="2.6" fill="${color}"/>` },
+}
+
+const swatchSvg = (kind: keyof typeof SWATCH, color: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${SWATCH[kind].width}" height="8" viewBox="0 0 ${SWATCH[kind].width} 8">${SWATCH[kind].shape(color)}</svg>`
+
+function lastBarSvg(s: TokenSplit): string {
+  const H = LAST_BAR_H
   const total = Math.max(1, promptOf(s))
-  const parts: [number, string][] = [
-    [s.read, READ_COLOR],
-    [s.write, WRITE_COLOR],
-    [s.fresh, FRESH_COLOR],
-  ]
-  const shown = parts.filter(([v]) => v > 0)
-  const gap = 1
-  const room = W - gap * (shown.length - 1)
+  const parts = (
+    [
+      [s.read, READ_COLOR],
+      [s.write, WRITE_COLOR],
+      [s.fresh, FRESH_COLOR],
+    ] as [number, string][]
+  ).filter(([v]) => v > 0)
+  const widths = parts.map(([v]) => Math.max(0.9, (v / total) * 100))
+  const scale = 100 / widths.reduce((sum, w) => sum + w, 0)
   let x = 0
-  const rects = shown.map(([v, c]) => {
-    const w = Math.max(2, (v / total) * room)
-    const rect = `<rect x="${x.toFixed(1)}" y="0" width="${w.toFixed(1)}" height="4" rx="2" fill="${c}"/>`
-    x += w + gap
+  const rects = parts.map(([, c], i) => {
+    const w = widths[i] * scale
+    const rect = `<rect x="${x.toFixed(2)}%" y="0" width="${w.toFixed(2)}%" height="${H}" fill="${c}"/>`
+    x += w
     return rect
   })
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="4" viewBox="0 0 ${W} 4">${rects.join('')}</svg>`
+  const cuts = parts.slice(1).map((_, i) => {
+    const at = widths.slice(0, i + 1).reduce((sum, w) => sum + w * scale, 0)
+    return `<rect x="${at.toFixed(2)}%" y="0" width="1.5" height="${H}" class="gap"/>`
+  })
+  const style = themeStyle('.gap{fill:#FFFFFF}', '.gap{fill:#262624}')
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${STRETCH_W}" height="${H}">${style}<defs><clipPath id="last"><rect width="100%" height="${H}" rx="${H / 2}"/></clipPath></defs><g clip-path="url(#last)"><rect width="100%" height="${H}" fill="${TRACK_COLOR}"/>${rects.join('')}${cuts.join('')}</g></svg>`
 }
+
+const svgText = (x: number, y: number, text: string, anchor: 'start' | 'middle' | 'end', paint = 'class="soft"', extra = '') =>
+  `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" ${SVG_FONT} font-size="10.5" text-anchor="${anchor}" ${paint}${extra}>${text}</text>`
+
+const gridLine = (x1: number, x2: number, y: number, isBase = false) =>
+  `<line x1="${x1}" x2="${x2}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${AXIS_COLOR}" stroke-opacity="${isBase ? '.45' : '.3'}"${isBase ? '' : ' stroke-dasharray="3 4"'}/>`
+
+const axisOf = (L: number, R: number, max: number, y: (v: number) => number) =>
+  gridLine(L - 4, R, y(0), true) + [max / 2, max].map(v => gridLine(L - 4, R, y(v)) + svgText(L - 10, y(v) + 3.5, tokens(v), 'end')).join('')
 
 function tokensChartSvg(turns: readonly CacheTurn[], W: number): string {
   const H = CHART_H
   const L = 40
-  const R = W - 34
+  const R = W - 54
   const top = 8
-  const base = H - 18
+  const base = H - 26
   const max = niceMax(Math.max(...turns.map(promptOf)))
   const y = (v: number) => base - (v / max) * (base - top)
   const yp = (p: number) => base - (p / 100) * (base - top)
   const slot = (R - L) / turns.length
-  const x = (i: number) => L + (i + 0.5) * slot
-  const bw = Math.min(24, slot * 0.45)
+  const x = (i: number) => Math.round(L + (i + 0.5) * slot)
+  const bw = 2 * Math.round(Math.max(6, Math.min(22, slot * 0.42)) / 2)
   const axis = axisOf(L, R, max, y)
-  const right = [0, 50, 100].map(p => svgText(R + 6, yp(p) + 3, `${p}%`, 'start')).join('')
+  const right = [50, 100].map(p => svgText(R + 6, yp(p) + 3.5, `${p}%`, 'start')).join('')
   const bars = turns
     .map((t, i) => {
       let at = base
-      const barTop = y(promptOf(t))
-      const clip = `<clipPath id="bar-${i}"><rect x="${(x(i) - bw / 2).toFixed(1)}" y="${barTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(base - barTop + 4).toFixed(1)}" rx="3"/></clipPath>`
+      const left = x(i) - bw / 2
       const stack = (
         [
           [t.read, READ_COLOR],
@@ -2609,27 +2819,30 @@ function tokensChartSvg(turns: readonly CacheTurn[], W: number): string {
         ] as [number, string][]
       )
         .filter(([v]) => v > 0)
-        .map(([v, c]) => {
-          const h = Math.max(1, base - y(v))
+        .map(([v, c], k) => {
+          const h = Math.max(k === 0 ? 1.5 : 2.5, base - y(v))
           at -= h
-          return `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${at.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" fill-opacity=".85"/>`
+          const gap = k === 0 ? 0 : 1
+          return `<rect x="${left.toFixed(1)}" y="${at.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, h - gap).toFixed(1)}" fill="${c}"/>`
         })
         .join('')
-      return `${clip}<g clip-path="url(#bar-${i})">${stack}</g>` + svgText(x(i), H - 4, String(t.turn), 'middle')
+      const clip = `<clipPath id="bar-${i}"><rect x="${left}" y="${at.toFixed(1)}" width="${bw}" height="${(base - at).toFixed(1)}" rx="3.5"/></clipPath>`
+      return `${clip}<g clip-path="url(#bar-${i})">${stack}</g>` + svgText(x(i), base + 12, String(t.turn), 'middle')
     })
     .join('')
-  const line = `<polyline fill="none" stroke="${AXIS_COLOR}" stroke-width="1.2" points="${turns.map((t, i) => `${x(i).toFixed(1)},${yp(hitOf(t)).toFixed(1)}`).join(' ')}"/>`
-  const dots = turns.map((t, i) => `<circle cx="${x(i).toFixed(1)}" cy="${yp(hitOf(t)).toFixed(1)}" r="3.5" fill="${hitColor(hitOf(t))}"/>`).join('')
+  const points = turns.map((t, i) => `${x(i).toFixed(1)},${yp(hitOf(t)).toFixed(1)}`).join(' ')
+  const line = turns.length > 1 ? `<polyline fill="none" stroke="${AXIS_COLOR}" stroke-width="1.2" stroke-linejoin="round" points="${points}"/>` : ''
+  const dots = turns.map((t, i) => `<circle class="ring" cx="${x(i).toFixed(1)}" cy="${yp(hitOf(t)).toFixed(1)}" r="3.2" fill="${hitColor(hitOf(t))}" stroke-width="2" paint-order="stroke"/>`).join('')
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${axis}${right}${bars}${line}${dots}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${inkStyle}${RING_STYLE}${axis}${right}${bars}${line}${dots}</svg>`
 }
 
 function savingsChartSvg(turns: readonly CacheTurn[], before: { read: number; write: number }, W: number): string {
   const H = CHART_H
-  const L = 40
-  const R = W - 12
-  const top = 14
-  const base = H - 18
+  const L = 44
+  const R = W - 24
+  const top = 8
+  const base = H - 26
   let read = before.read
   let write = before.write
   const points = turns.map(t => {
@@ -2645,16 +2858,20 @@ function savingsChartSvg(turns: readonly CacheTurn[], before: { read: number; wr
   const path = (key: 'read' | 'write') => points.map((p, i) => `${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join(' ')
   const lastX = x(points.length - 1)
   const end = points[points.length - 1] ?? { read: 0, write: 0 }
-  const area = `<polygon points="${x(0).toFixed(1)},${base} ${path('read')} ${lastX.toFixed(1)},${base}" fill="${READ_COLOR}" fill-opacity=".1"/>`
-  const lines = `<polyline fill="none" stroke="${READ_COLOR}" stroke-width="2" points="${path('read')}"/><polyline fill="none" stroke="${WRITE_COLOR}" stroke-width="2" points="${path('write')}"/>`
+  const area = `<polygon points="${x(0).toFixed(1)},${base} ${path('read')} ${lastX.toFixed(1)},${base}" fill="${READ_COLOR}" fill-opacity=".16"/>`
+  const lines = `<polyline fill="none" stroke="${READ_COLOR}" stroke-width="2" stroke-linejoin="round" points="${path('read')}"/><polyline fill="none" stroke="${WRITE_COLOR}" stroke-width="2" stroke-linejoin="round" points="${path('write')}"/>`
+  const label = (v: number, paint: string) => {
+    const cy = y(v)
+    return cy >= 17 ? svgText(lastX + 3, cy - 8, tokens(v), 'end', paint, ' font-weight="600"') : svgText(lastX - 7, Math.max(8, cy - 2), tokens(v), 'end', paint, ' font-weight="600"')
+  }
   const ends =
-    `<circle cx="${lastX.toFixed(1)}" cy="${y(end.read).toFixed(1)}" r="3.5" fill="${READ_COLOR}"/>` +
-    svgText(lastX - 6, y(end.read) - 7, tokens(end.read), 'end', READ_COLOR) +
-    `<circle cx="${lastX.toFixed(1)}" cy="${y(end.write).toFixed(1)}" r="3.5" fill="${WRITE_COLOR}"/>` +
-    svgText(lastX - 6, y(end.write) - 7, tokens(end.write), 'end', WRITE_COLOR)
-  const labels = turns.map((t, i) => svgText(x(i), H - 4, String(t.turn), 'middle')).join('')
+    `<circle cx="${lastX.toFixed(1)}" cy="${y(end.read).toFixed(1)}" r="4" fill="${READ_COLOR}"/>` +
+    label(end.read, `fill="${READ_COLOR}"`) +
+    `<circle cx="${lastX.toFixed(1)}" cy="${y(end.write).toFixed(1)}" r="4" fill="${WRITE_COLOR}"/>` +
+    label(end.write, 'class="amber"')
+  const labels = turns.map((t, i) => svgText(x(i), base + 12, String(t.turn), 'middle')).join('')
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${axis}${area}${lines}${ends}${labels}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${inkStyle}${axis}${area}${lines}${ends}${labels}</svg>`
 }
 
 async function cacheInfo($: EngineInterface): Promise<SectionInfo> {
@@ -2663,15 +2880,39 @@ async function cacheInfo($: EngineInterface): Promise<SectionInfo> {
   return { meta: `${hitOf(sumTokens(samples))}% hit`, badge: null }
 }
 
+const CACHE_VIEWS: readonly { id: CacheView; label: string }[] = [
+  { id: 'tokens', label: 'Tokens' },
+  { id: 'savings', label: 'Savings' },
+]
+
+async function cacheTabs($: EngineInterface, e: RenderInput<'Pane'>): Promise<RenderElement | null> {
+  const t = $.ui.resolve(e)
+  const { Box, Button } = t
+  const Svg = 'Svg' in t ? t.Svg : null
+  if (!Svg || (await read($, cacheSamples)).length === 0) return null
+  const view = await read($, cacheView)
+  const selected = Math.max(0, CACHE_VIEWS.findIndex(one => one.id === view))
+  return (
+    <Box key="cache-tabs" position="relative" flexDirection="row" flexShrink={0}>
+      <Svg source={tabsSvg(CACHE_VIEWS.map(one => one.label), selected)} alt={`Cache view: ${CACHE_VIEWS[selected]?.label ?? ''}`} width={TAB_W * CACHE_VIEWS.length} height={TAB_H} />
+      {CACHE_VIEWS.map((one, i) => (
+        <Box key={`cache-tab-${one.id}`} position="absolute" top={0} bottom={0} left={i * TAB_CELLS} width={TAB_CELLS} flexDirection="row" justifyContent="center" alignItems="stretch" overflow="hidden">
+          <Button key={`cache-view-${one.id}`} plain label={TAB_FILL} onPress={() => update($, cacheView, () => one.id)} />
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise<RenderElement> {
   const t = $.ui.resolve(e)
-  const { Box, Button, Text } = t
+  const { Box, Text } = t
   const Svg = 'Svg' in t ? t.Svg : null
   const samples = await read($, cacheSamples)
   const view = await read($, cacheView)
   const c = await readCache($)
   const columns = e.props.bodyColumns || 40
-  const rowWidth = Math.min(1400, Math.max(160, (columns - 2) * 7))
+  const rowWidth = widthOf(columns - 2)
   if (samples.length === 0 || !Svg) {
     return (
       <Box flexDirection="column">
@@ -2688,147 +2929,110 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const total = sumTokens(turns)
   const last = samples[samples.length - 1]
   const latest = shown[shown.length - 1]?.turn
-  const pick = (next: CacheView) => update($, cacheView, () => next)
-  const colored = (color: string | undefined) => (color === undefined ? {} : { color: ink(color) })
 
-  const tile = (key: string, o: { name: string; value: string; color?: string; dot?: string; sub?: string; background?: string }) => (
-    <Box key={key} flexDirection="column" flexGrow={1} flexShrink={1} paddingX={1} backgroundColor={o.background ?? TILE_BG} minWidth={0}>
-      <Box key={`${key}-name`} flexDirection="row" columnGap={1} minWidth={0}>
-        {o.dot === undefined
-          ? []
-          : [
-              <Text key={`${key}-dot`} color={ink(o.dot)}>
-                {CACHE_DOT}
-              </Text>,
-            ]}
-        {o.background === undefined ? (
-          <Text dimColor wrap="truncate">
-            {o.name}
-          </Text>
-        ) : (
-          <Text {...colored(o.color)} wrap="truncate">
-            {o.name}
-          </Text>
-        )}
+  const tiles = (key: string, specs: readonly TileSpec[], signs: readonly string[] = []) => {
+    const row = tileRowSvg(specs, signs, rowWidth)
+    const alt = specs.map((one, i) => `${i === 0 ? '' : `${signs[i - 1] ?? '·'} `}${[`${one.label} ${one.value}`, one.sub ?? ''].filter(part => part !== '').join(', ')}`).join(' ')
+    return (
+      <Box key={key} paddingX={1} marginTop={1} minWidth={0}>
+        <Svg source={row.source} alt={alt} width={rowWidth} height={row.height} />
       </Box>
-      <Text bold {...colored(o.color)} wrap="truncate">
-        {o.value}
-      </Text>
-      {o.sub === undefined
-        ? []
-        : [
-            o.background === undefined ? (
-              <Text key={`${key}-sub`} dimColor wrap="truncate">
-                {o.sub}
-              </Text>
-            ) : (
-              <Text key={`${key}-sub`} {...colored(o.color)} wrap="truncate">
-                {o.sub}
-              </Text>
-            ),
-          ]}
+    )
+  }
+  const legendItem = (key: string, kind: keyof typeof SWATCH, text: string, color: string) => (
+    <Box key={key} flexDirection="row" alignItems="center" columnGap={0.5}>
+      <Svg source={swatchSvg(kind, color)} alt="" width={SWATCH[kind].width} height={8} />
+      <Text>{text}</Text>
     </Box>
   )
-  const legendItem = (key: string, text: string, color?: string) =>
-    color ? (
-      <Text key={key} color={ink(color)}>
-        {text}
-      </Text>
-    ) : (
-      <Text key={key} dimColor>
-        {text}
-      </Text>
-    )
-  const cell = (key: string, width: number, text: string, color?: string, isBold = false) => (
-    <Box key={key} width={width} flexShrink={1} minWidth={0} justifyContent="flex-end">
-      {color ? (
-        <Text color={ink(color)} bold={isBold} wrap="truncate">
-          {text}
+  const cell = (key: string, o: { width: number; text: string; color?: string; isBold?: boolean; isLatest?: boolean; isStart?: boolean; isFixed?: boolean }) => (
+    <Box key={key} width={o.width} flexGrow={o.isStart ? 0 : o.width} flexShrink={o.isFixed ? 0 : 1} minWidth={0} justifyContent={o.isStart ? 'flex-start' : 'flex-end'} paddingX={0.25} {...(o.isLatest ? { backgroundColor: LATEST_BG } : {})}>
+      {o.color ? (
+        <Text color={ink(o.color)} bold={o.isBold} wrap="truncate">
+          {o.text}
         </Text>
       ) : (
-        <Text dimColor wrap="truncate">
-          {text}
+        <Text bold={o.isBold} wrap="truncate">
+          {o.text}
         </Text>
       )}
     </Box>
   )
-  const tab = (id: CacheView, label: string) => (
-    <Box key={`cache-tab-${id}`} paddingX={1} {...(view === id ? { backgroundColor: TAB_BG } : {})}>
-      <Button key={`cache-view-${id}`} plain dimColor={view !== id} label={label} onPress={() => pick(id)} />
+  const headCell = (key: string, o: { width: number; text: string; isStart?: boolean; isFixed?: boolean }) => (
+    <Box key={key} flexDirection="column" width={o.width} flexGrow={o.isStart ? 0 : o.width} flexShrink={o.isFixed ? 0 : 1} minWidth={0}>
+      <Box key={`${key}-label`} flexDirection="row" justifyContent={o.isStart ? 'flex-start' : 'flex-end'} paddingX={0.25} minWidth={0}>
+        <Text wrap="truncate">{o.text}</Text>
+      </Box>
+      <Box key={`${key}-rule`} height={0.15} marginTop={0.25} backgroundColor={DIVIDER} />
     </Box>
   )
 
-  const head = (
-    <Box key="cache-head" flexDirection="row" flexWrap="wrap" alignItems="center" paddingX={1} minWidth={0}>
-      <Box key="cache-tabs" flexDirection="row" backgroundColor={TILE_BG}>
-        {tab('tokens', 'Tokens')}
-        {tab('savings', 'Savings')}
-      </Box>
-    </Box>
-  )
+  const lastHit = hitOf(last)
   const lastRow = (
-    <Box key="cache-last" flexDirection="column" paddingX={1} marginTop={1} minWidth={0}>
+    <Box key="cache-last" flexDirection="column" paddingX={1} minWidth={0}>
       <Box flexDirection="row" alignItems="center" gap={1} minWidth={0}>
         <Box flexGrow={1} minWidth={0}>
-          <Text dimColor wrap="truncate">{`Last request · ${clockTime(last.at)}`}</Text>
+          <Text wrap="truncate">{`Last request · ${clockTime(last.at)}`}</Text>
         </Box>
-        <Text bold color={ink(hitColor(hitOf(last)))}>{`${hitOf(last)}%`}</Text>
+        <Text bold color={ink(hitColor(lastHit))}>{`${lastHit}%`}</Text>
       </Box>
-      <Box key="cache-last-parts" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} minWidth={0}>
-        <Text color={ink(READ_COLOR)}>{`read ${tokens(last.read)}`}</Text>
-        <Text dimColor>·</Text>
-        <Text color={ink(WRITE_COLOR)}>{`wrote ${tokens(last.write)}`}</Text>
-        <Text dimColor>·</Text>
-        <Text color={FRESH_COLOR}>{`new ${tokens(last.fresh)}`}</Text>
+      <Box key="cache-last-parts" flexDirection="row" minWidth={0}>
+        <Text wrap="truncate">
+          <Text color={ink(READ_COLOR)}>{`read ${tokens(last.read)}`}</Text>
+          <Text dimColor>{' · '}</Text>
+          <Text color={ink(WRITE_COLOR)}>{`wrote ${tokens(last.write)}`}</Text>
+          <Text dimColor>{' · '}</Text>
+          <Text color={FRESH_COLOR}>{`new ${tokens(last.fresh)}`}</Text>
+        </Text>
       </Box>
-      <Svg source={lastBarSvg(last, rowWidth)} alt={`read ${tokens(last.read)}, wrote ${tokens(last.write)}, new ${tokens(last.fresh)}`} width={rowWidth} height={4} />
+      <Box key="cache-last-bar" marginTop={0.5}>
+        <Svg source={lastBarSvg(last)} alt={`read ${tokens(last.read)}, wrote ${tokens(last.write)}, new ${tokens(last.fresh)}`} height={LAST_BAR_H} />
+      </Box>
     </Box>
   )
 
+  const COLS = { turn: 4, steps: 4.5, read: 7.25, wrote: 7.25, fresh: 4, hit: 7.5 }
   const tokensView = [
-    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} marginTop={1} minWidth={0}>
-      {legendItem('cache-legend-read', '■ read', READ_COLOR)}
-      {legendItem('cache-legend-write', '■ wrote', WRITE_COLOR)}
-      {legendItem('cache-legend-new', '■ new', FRESH_COLOR)}
-      {legendItem('cache-legend-hit', '● % hit')}
+    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={1.5} paddingX={1} marginTop={1} minWidth={0}>
+      {legendItem('cache-legend-read', 'square', 'read', READ_COLOR)}
+      {legendItem('cache-legend-write', 'square', 'wrote', WRITE_COLOR)}
+      {legendItem('cache-legend-new', 'square', 'new', FRESH_COLOR)}
+      {legendItem('cache-legend-hit', 'dot', 'hit', AXIS_COLOR)}
     </Box>,
-    <Box key="cache-chart" paddingX={1}>
+    <Box key="cache-chart" paddingX={1} marginTop={0.5}>
       <Svg source={tokensChartSvg(shown, rowWidth)} alt={`Tokens per turn and hit rate, turns ${shown[0]?.turn}–${shown[shown.length - 1]?.turn}`} width={rowWidth} height={CHART_H} />
     </Box>,
-    <Box key="cache-totals-note" paddingX={1} marginTop={1}>
-      <Text dimColor>{`Session totals · ${plural(turns.length, 'turn')} · ${plural(samples.length, 'request')}`}</Text>
+    tiles('cache-tiles', [
+      { label: 'Read', value: tokens(total.read), color: READ_TILE, dot: READ_COLOR },
+      { label: 'Wrote', value: tokens(total.write), color: DEEP_AMBER, dot: WRITE_COLOR },
+      { label: 'New', value: tokens(total.fresh), color: FRESH_TILE, dot: FRESH_COLOR },
+      { label: 'Hit', value: `${hitOf(total)}%`, color: toneOf(hitColor(hitOf(total))) },
+    ]),
+    <Box key="cache-totals-note" paddingX={1} marginTop={0.25}>
+      <Text>{`Session · ${plural(turns.length, 'turn')} · ${plural(samples.length, 'request')}`}</Text>
     </Box>,
-    <Box key="cache-tiles" flexDirection="row" gap={1} paddingX={1} minWidth={0}>
-      {tile('cache-total-read', { name: 'Read', value: tokens(total.read), color: READ_COLOR, dot: READ_COLOR })}
-      {tile('cache-total-write', { name: 'Wrote', value: tokens(total.write), color: WRITE_COLOR, dot: WRITE_COLOR })}
-      {tile('cache-total-new', { name: 'New', value: tokens(total.fresh), color: FRESH_COLOR, dot: FRESH_COLOR })}
-      {tile('cache-total-hit', { name: 'Hit', value: `${hitOf(total)}%`, color: hitColor(hitOf(total)) })}
-    </Box>,
-    <Box key="cache-table" flexDirection="column" paddingX={1} marginTop={1} minWidth={0}>
-      <Box key="cache-table-head" flexDirection="row" minWidth={0}>
-        <Box width={4} flexGrow={1} flexShrink={0}>
-          <Text dimColor>Turn</Text>
-        </Box>
-        {cell('cache-th-steps', 7, 'Steps')}
-        {cell('cache-th-read', 9, 'Read')}
-        {cell('cache-th-write', 9, 'Wrote')}
-        {cell('cache-th-new', 8, 'New')}
-        {cell('cache-th-hit', 11, 'Hit')}
+    <Box key="cache-table" flexDirection="column" rowGap={0.25} paddingX={1} marginTop={1} minWidth={0}>
+      <Box key="cache-table-head" flexDirection="row" columnGap={0.625} minWidth={0}>
+        {headCell('cache-th-turn', { width: COLS.turn, text: 'Turn', isStart: true, isFixed: true })}
+        {headCell('cache-th-steps', { width: COLS.steps, text: 'Steps' })}
+        {headCell('cache-th-read', { width: COLS.read, text: 'Read' })}
+        {headCell('cache-th-write', { width: COLS.wrote, text: 'Wrote' })}
+        {headCell('cache-th-new', { width: COLS.fresh, text: 'New' })}
+        {headCell('cache-th-hit', { width: COLS.hit, text: 'Hit', isFixed: true })}
       </Box>
       {[...shown].reverse().map(one => {
         const isLatest = one.turn === latest
+        const pct = hitOf(one)
         return (
-          <Box key={`cache-row-${one.turn}`} flexDirection="row" minWidth={0} {...(isLatest ? { backgroundColor: TILE_BG } : {})}>
-            <Box width={4} flexGrow={1} flexShrink={0}>
-              <Text bold={isLatest}>{String(one.turn)}</Text>
-            </Box>
-            {cell(`cache-steps-${one.turn}`, 7, String(one.steps))}
-            {cell(`cache-read-${one.turn}`, 9, tokens(one.read), READ_COLOR)}
-            {cell(`cache-write-${one.turn}`, 9, tokens(one.write), WRITE_COLOR)}
-            {cell(`cache-new-${one.turn}`, 8, tokens(one.fresh), FRESH_COLOR)}
-            <Box key={`cache-hit-${one.turn}`} width={11} flexShrink={1} minWidth={0} flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={1}>
-              <Svg source={hitBarSvg(hitOf(one))} alt={`${hitOf(one)}% hit`} width={18} height={4} />
-              <Text color={ink(hitColor(hitOf(one)))} wrap="truncate">{`${hitOf(one)}%`}</Text>
+          <Box key={`cache-row-${one.turn}`} flexDirection="row" columnGap={0.625} minWidth={0}>
+            {cell(`cache-turn-${one.turn}`, { width: COLS.turn, text: String(one.turn), isBold: true, isLatest, isStart: true, isFixed: true })}
+            {cell(`cache-steps-${one.turn}`, { width: COLS.steps, text: String(one.steps), isLatest })}
+            {cell(`cache-read-${one.turn}`, { width: COLS.read, text: tokens(one.read), color: READ_COLOR, isLatest })}
+            {cell(`cache-write-${one.turn}`, { width: COLS.wrote, text: tokens(one.write), color: WRITE_COLOR, isLatest })}
+            {cell(`cache-new-${one.turn}`, { width: COLS.fresh, text: tokens(one.fresh), color: FRESH_COLOR, isLatest })}
+            <Box key={`cache-hit-${one.turn}`} width={COLS.hit} flexGrow={COLS.hit} flexShrink={0} minWidth={0} flexDirection="row" justifyContent="flex-end" alignItems="center" columnGap={0.5} paddingX={0.25} {...(isLatest ? { backgroundColor: LATEST_BG } : {})}>
+              <Svg source={hitBarSvg(pct)} alt={`${pct}% hit`} width={HIT_BAR_W} height={HIT_BAR_H} />
+              {pct >= 90 ? <Text wrap="truncate">{`${pct}%`}</Text> : <Text color={ink(hitColor(pct))} wrap="truncate">{`${pct}%`}</Text>}
             </Box>
           </Box>
         )
@@ -2842,34 +3046,30 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const extra = total.write * writeExtra
   const net = saved - extra
   const share = Math.round((net / Math.max(1, promptOf(total))) * 100)
-  const sign = (key: string, text: string) => (
-    <Text key={key} dimColor>
-      {text}
-    </Text>
-  )
   const savingsView = [
-    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1} marginTop={1} minWidth={0}>
-      {legendItem('cache-legend-read', '━ read from cache (running total)', READ_COLOR)}
-      {legendItem('cache-legend-write', '━ written to cache', WRITE_COLOR)}
+    <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={1.5} paddingX={1} marginTop={1} minWidth={0}>
+      {legendItem('cache-legend-read', 'line', 'read tích lũy', READ_COLOR)}
+      {legendItem('cache-legend-write', 'line', 'written', WRITE_COLOR)}
     </Box>,
-    <Box key="cache-chart" paddingX={1}>
+    <Box key="cache-chart" paddingX={1} marginTop={0.5}>
       <Svg source={savingsChartSvg(shown, earlier, rowWidth)} alt={`Running totals: read ${tokens(total.read)}, written ${tokens(total.write)}`} width={rowWidth} height={CHART_H} />
     </Box>,
-    <Box key="cache-tiles" flexDirection="row" alignItems="center" columnGap={1} paddingX={1} marginTop={1} minWidth={0}>
-      {tile('cache-saved', { name: 'Saved by reads', value: `≈ ${tokens(saved)}`, color: READ_COLOR, dot: READ_COLOR, sub: `read × ${readSaving}` })}
-      {sign('cache-minus', '−')}
-      {tile('cache-extra', { name: 'Extra for writes', value: `≈ ${tokens(extra)}`, color: WRITE_COLOR, dot: WRITE_COLOR, sub: `wrote × ${writeExtra}` })}
-      {sign('cache-equals', '=')}
-      {tile('cache-net', { name: 'Net saved', value: `≈ ${tokens(net)}`, color: READ_COLOR, sub: `≈ ${share}% of input`, background: tint(READ_COLOR) })}
-    </Box>,
-    <Box key="cache-savings-note" paddingX={1}>
-      <Text dimColor>In input-token equivalents, at list-price ratios. Not your bill.</Text>
+    tiles(
+      'cache-tiles',
+      [
+        { label: 'Saved by reads', value: tokens(saved), color: READ_TILE, dot: READ_COLOR, sub: `read × ${readSaving}` },
+        { label: 'Extra writes', value: tokens(extra), color: DEEP_AMBER, dot: WRITE_COLOR, sub: `wrote × ${writeExtra}` },
+        { label: 'Net saved', value: tokens(net), color: DEEP_GREEN, sub: `≈ ${share}% input`, isGood: true },
+      ],
+      ['−', '='],
+    ),
+    <Box key="cache-savings-note" paddingX={1} marginTop={0.25}>
+      <Text wrap="wrap">Input tokens at list-price ratios. Not your bill.</Text>
     </Box>,
   ]
 
   return (
     <Box flexDirection="column">
-      {head}
       {lastRow}
       {view === 'savings' ? savingsView : tokensView}
     </Box>
@@ -2889,38 +3089,40 @@ async function cacheFooter($: EngineInterface, e: RenderInputOf<'Pane'>): Promis
   const ttlName = c.ttlMs % 3_600_000 === 0 ? `${c.ttlMs / 3_600_000}h` : `${Math.round(c.ttlMs / 60_000)}m`
   const color = c.isGuess ? undefined : !c.isWarm ? EXPIRED_COLOR : c.isWarning ? WARN_COLOR : READ_COLOR
   const state = !c.isWarm ? 'expired' : c.isWarning ? 'expiring' : 'warm'
-  const W = Math.min(1400, Math.max(160, ((e.props.bodyColumns || 40) - 2) * 7))
   const share = c.isWarm ? Math.max(0, Math.min(1, c.left / c.ttlMs)) : 0
-  const bar = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="4" viewBox="0 0 ${W} 4"><rect width="${W}" height="4" rx="2" fill="${TRACK_COLOR}"/>${share > 0 ? `<rect width="${Math.max(2, share * W).toFixed(1)}" height="4" rx="2" fill="${color ?? QUIET}"/>` : ''}</svg>`
+  const fill = color ?? QUIET
+  const bar = `<svg xmlns="http://www.w3.org/2000/svg" width="${STRETCH_W}" height="${FOOTER_BAR_H}">${FOOTER_TRACK_STYLE}<rect class="track" width="100%" height="${FOOTER_BAR_H}" rx="${FOOTER_BAR_H / 2}"/>${share > 0 ? `<rect width="${Math.max(1, share * 100).toFixed(2)}%" height="${FOOTER_BAR_H}" rx="${FOOTER_BAR_H / 2}" fill="${fill}"/>` : ''}</svg>`
   const until = clockTime(now + c.left)
   const strong = color === undefined ? {} : { color: ink(color) }
+  const card = color === undefined ? TILE_BG : tintStrong(color === READ_COLOR ? WARM_TINT : color)
+  const line = (key: string, text: string, isBold = false) =>
+    color === undefined ? (
+      <Text key={key} bold={isBold} dimColor={!isBold} wrap="truncate">
+        {text}
+      </Text>
+    ) : (
+      <Text key={key} bold={isBold} {...strong} wrap="truncate">
+        {text}
+      </Text>
+    )
 
   return [
-    <Box key="hub-cache-footer" flexDirection="column" marginTop={1} paddingX={1} backgroundColor={color === undefined ? TILE_BG : tint(color)} minWidth={0}>
-      <Box key="hub-cache-footer-head" flexDirection="row" alignItems="center" columnGap={1} minWidth={0}>
+    <Box key="hub-cache-footer" flexDirection="column" rowGap={0} marginX={0.5} marginTop={1} marginBottom={0.25} paddingTop={0.5} paddingBottom={0.625} paddingX={1.25} borderStyle="round" borderColor="#00000000" backgroundColor={card} minWidth={0}>
+      <Box key="hub-cache-footer-head" flexDirection="row" alignItems="center" columnGap={0.5} minWidth={0}>
+        <Svg key="hub-cache-footer-icon" source={clockIconSvg(fill)} alt="" width={CLOCK_ICON} height={CLOCK_ICON} />
         <Box flexGrow={1} minWidth={0}>
-          <Text bold {...strong} wrap="truncate">{`${CACHE_GLYPH} Cache ${state} · ${c.isGuess ? '~' : ''}${ttlName}`}</Text>
+          {line('hub-cache-footer-state', `Cache ${state} · ${c.isGuess ? '~' : ''}${ttlName}`, true)}
         </Box>
-        {c.isWarm
-          ? [
-              <Text key="hub-cache-footer-left" bold {...strong}>
-                {`${coarse} left`}
-              </Text>,
-            ]
-          : []}
+        {c.isWarm ? [line('hub-cache-footer-left', `${coarse} left`, true)] : []}
       </Box>
-      <Svg source={bar} alt={c.isWarm ? `${Math.round(share * 100)}% of the cache lifetime left` : 'Cache expired'} width={W} height={4} />
+      <Box key="hub-cache-footer-bar" marginTop={0.5} marginBottom={0.25}>
+        <Svg source={bar} alt={c.isWarm ? `${Math.round(share * 100)}% of the cache lifetime left` : 'Cache expired'} height={FOOTER_BAR_H} />
+      </Box>
       <Box key="hub-cache-footer-meta" flexDirection="row" columnGap={1} minWidth={0}>
         <Box flexGrow={1} minWidth={0}>
-          <Text dimColor wrap="truncate">{`${c.isWarm ? 'Expires' : 'Expired'} ${until}`}</Text>
+          {line('hub-cache-footer-until', `${c.isWarm ? 'Expires' : 'Expired'} ${until}`)}
         </Box>
-        {last === undefined
-          ? []
-          : [
-              <Text key="hub-cache-footer-kept" dimColor>
-                {`${tokens(last.read + last.write)} cached`}
-              </Text>,
-            ]}
+        {last === undefined || !c.isWarm ? [] : [line('hub-cache-footer-kept', `~${tokens(last.read + last.write)} giữ lại`)]}
       </Box>
     </Box>,
   ]
@@ -2947,17 +3149,20 @@ function registerCache(on: On, options: Record<string, unknown> | undefined): vo
   })
 }
 
-const RAIL_COLUMNS = 6
-const RAIL_W = 44
-const RAIL_CELL_H = 36
-const ICON = 18
-const RAIL_FILL = '\u00a0'.repeat(14)
+const RAIL_COLUMNS = 3
+const RAIL_W = 24
+const RAIL_CELL_H = 30
+const ICON = 15
+const RAIL_FILL = '\u00a0'.repeat(6)
+const RAIL_NUDGE = 4
 const ACCENT = PURPLE
 const DIVIDER = '#8080802e'
+const RAIL_ACTIVE = { light: '#184F95', dark: '#7AA7F0' }
+const RAIL_INK = { light: '#4A4945', dark: '#B9B7B0' }
 
 const SECTIONS: { id: HubSection; title: string; path: string }[] = [
   { id: 'progress', title: 'Progress', path: '<path d="M3.5 5.5 5 7l2.5-2.5M3.5 11.5 5 13l2.5-2.5M3.5 17.5 5 19l2.5-2.5M11 6h9M11 12h9M11 18h9"/>' },
-  { id: 'next', title: 'Next steps', path: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z"/>' },
+  { id: 'next', title: 'Next steps', path: '<path d="M3 12h1m8-9v1m8 8h1M5.6 5.6l.7.7m12.1-.7-.7.7M9 16a5 5 0 1 1 6 0a3.5 3.5 0 0 0-1 3a2 2 0 0 1-4 0a3.5 3.5 0 0 0-1-3M9.7 17h4.6"/>' },
   { id: 'calls', title: 'Skills & agents', path: '<path d="M12 3 3 7.5l9 4.5 9-4.5L12 3z"/><path d="m3 12 9 4.5 9-4.5"/><path d="m3 16.5 9 4.5 9-4.5"/>' },
   { id: 'cache', title: 'Cache', path: '<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13"/><path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/>' },
 ]
@@ -2970,11 +3175,11 @@ function railAlt(title: string, isActive: boolean, badge: Badge): string {
 }
 
 function railCellSvg(path: string, isActive: boolean, badge: Badge): string {
-  const at = { x: (RAIL_W - ICON) / 2, y: (RAIL_CELL_H - ICON) / 2 }
+  const at = { x: (RAIL_W - ICON) / 2 - RAIL_NUDGE, y: (RAIL_CELL_H - ICON) / 2 }
   const scale = ICON / 24
-  const bar = isActive ? `<rect x="0" y="6" width="2" height="${RAIL_CELL_H - 12}" rx="1" fill="${ACCENT}"/>` : ''
+  const ink = isActive ? 'class="on"' : 'class="ink"'
   const dot = badge === null ? '' : `<circle cx="${at.x + ICON + 1}" cy="${at.y + 1}" r="3" fill="${badge.color}"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${RAIL_W}" height="${RAIL_CELL_H}" viewBox="0 0 ${RAIL_W} ${RAIL_CELL_H}">${bar}<g transform="translate(${at.x} ${at.y}) scale(${scale})" fill="none" stroke="${isActive ? ACCENT : QUIET}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</g>${dot}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${RAIL_W}" height="${RAIL_CELL_H}" viewBox="0 0 ${RAIL_W} ${RAIL_CELL_H}">${themeStyle(`.ink{stroke:${RAIL_INK.light}}.on{stroke:${RAIL_ACTIVE.light}}`, `.ink{stroke:${RAIL_INK.dark}}.on{stroke:${RAIL_ACTIVE.dark}}`)}<g transform="translate(${at.x} ${at.y}) scale(${scale})" fill="none" ${ink} stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</g>${dot}</svg>`
 }
 
 const isLive = (p: Plan) => p.state !== 'done' && isDrawn(p)
@@ -3967,7 +4172,7 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
   const Svg = e.surface === 'desktop' && 'Svg' in t ? t.Svg : null
   const current = await read($, section)
   const columns = e.props.bodyColumns || 40
-  const inner = { ...e, props: { ...e.props, bodyColumns: Math.max(20, columns - (Svg ? RAIL_COLUMNS + 1 : 0)) } }
+  const inner = { ...e, props: { ...e.props, bodyColumns: Math.max(20, columns - (Svg ? RAIL_COLUMNS + 0.5 : 0)) } }
   const sections = Svg ? SECTIONS : SECTIONS.filter(s => s.id !== 'cache')
   const infos = await Promise.all(
     sections.map(s =>
@@ -3984,11 +4189,18 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
       <Text color={RED} wrap="wrap">{`Couldn't draw ${active.title}: ${noteFailure($, active.title, error)}`}</Text>
     </Box>
   ))
+  const tabs = Svg && active.id === 'cache' ? await cacheTabs($, inner) : null
   const header = (
     <Box key="hub-header" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} paddingX={1} marginBottom={1} minWidth={0}>
-      <Text dimColor>{active.title}</Text>
+      {Svg ? (
+        <Box key="hub-title" flexShrink={0}>
+          <Svg source={titleSvg(active.title).source} alt={active.title} width={titleSvg(active.title).width} height={20} />
+        </Box>
+      ) : (
+        <Text dimColor>{active.title}</Text>
+      )}
       <Box flexGrow={1} />
-      <Text dimColor>{activeInfo?.meta ?? ''}</Text>
+      {tabs ?? <Text dimColor>{activeInfo?.meta ?? ''}</Text>}
     </Box>
   )
 
@@ -4014,10 +4226,10 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
   return (
     <Box flexDirection="column" minWidth={0}>
       <Box key="hub-main" flexDirection="row" alignItems="stretch" minWidth={0}>
-      <Box key="hub-rail" flexDirection="column" paddingY={1}>
+      <Box key="hub-rail" flexDirection="column" paddingY={0.5}>
         {sections.map((s, i) => (
           <Box key={`rail-cell-${s.id}`} position="relative" flexDirection="row" justifyContent="center" minWidth={RAIL_COLUMNS} flexShrink={0}>
-            <Svg source={railCellSvg(s.path, s.id === current, infos[i]?.badge ?? null)} alt={railAlt(s.title, s.id === current, infos[i]?.badge ?? null)}width={RAIL_W} height={RAIL_CELL_H} />
+            <Svg source={railCellSvg(s.path, s.id === current, infos[i]?.badge ?? null)} alt={railAlt(s.title, s.id === current, infos[i]?.badge ?? null)} width={RAIL_W} height={RAIL_CELL_H} />
             <Box key={`rail-hit-${s.id}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
               <Button key={`rail-${s.id}`} plain label={RAIL_FILL} onPress={() => showSection($, s.id)} />
             </Box>
@@ -4025,12 +4237,12 @@ async function drawHub($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<Re
         ))}
       </Box>
       <Box key="hub-divider" width={0.1} backgroundColor={DIVIDER} />
-      <Box key="hub-body" flexDirection="column" flexGrow={1} minWidth={0} paddingTop={1} paddingLeft={1}>
+      <Box key="hub-body" flexDirection="column" flexGrow={1} minWidth={0} paddingTop={1} paddingLeft={0.5} paddingBottom={1.75}>
         {header}
         {body}
       </Box>
       </Box>
-      {footer}
+      {footer.length > 0 ? [<Box key="hub-footer-rule" height={0.1} backgroundColor={DIVIDER} />, ...footer] : []}
     </Box>
   )
 }

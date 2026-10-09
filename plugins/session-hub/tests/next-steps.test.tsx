@@ -2,6 +2,19 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine, MockClock } from 'claude-code/testing'
 
+
+const svgAltIn = (node: unknown): string | undefined => {
+  if (node === null || typeof node !== 'object') return undefined
+  const one = node as { type?: unknown; props?: { alt?: unknown }; children?: unknown }
+  if (one.type === 'Svg') return String(one.props?.alt)
+  return Array.isArray(one.children) ? one.children.map(svgAltIn).find(alt => alt !== undefined) : undefined
+}
+
+type Found = { key?: string }
+type Finder = { find: (q: { type: 'Box'; key: string }) => Promise<unknown>; findAll: (q: { type: 'Box' }) => Promise<Found[]> }
+const sectionTitle = async (ui: Finder): Promise<string | undefined> => svgAltIn(await ui.find({ type: 'Box', key: 'hub-title' }))
+const railAlts = async (ui: Finder): Promise<(string | undefined)[]> => (await ui.findAll({ type: 'Box' })).filter(box => String(box.key ?? '').startsWith('rail-cell-')).map(svgAltIn)
+
 const PLUGIN = 'session-hub'
 const TOOL = 'mcp__session-hub__plan_progress'
 
@@ -221,7 +234,7 @@ const footer = ($: Engine, surface: 'desktop' | 'terminal' = 'desktop') =>
 type Drawn = { findAll: (q: { type: 'Text' | 'Button' }) => Promise<{ key?: string; text?: string; props: Record<string, unknown> }[]> }
 
 async function rowTexts(ui: Drawn) {
-  return (await ui.findAll({ type: 'Text' })).slice(2).filter(t => !String(t.text).startsWith('Mục tiêu: '))
+  return (await ui.findAll({ type: 'Text' })).slice(1).filter(t => !String(t.text).startsWith('Mục tiêu: '))
 }
 
 async function labels(ui: Drawn): Promise<string[]> {
@@ -250,7 +263,8 @@ async function stepButtons(ui: Drawn) {
 
 async function header($: Engine): Promise<string[]> {
   const ui = await pane($)
-  const all = (await ui.findAll({ type: 'Text' })).slice(0, 2).map(t => String(t.text))
+  const title = await sectionTitle(ui)
+  const all = [...(title !== undefined ? [title] : []), ...(await ui.findAll({ type: 'Text' })).map(t => String(t.text))].slice(0, 2)
   await ui.unmount()
   return all
 }
@@ -395,7 +409,7 @@ describe('desktop renderer', () => {
     const w = world(on)
     await completeTurn($, w)
     const ui = await pane($)
-    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress', 'Next steps · selected', 'Skills & agents', 'Cache'])
+    expect((await railAlts(ui))).toEqual(['Progress', 'Next steps · selected', 'Skills & agents', 'Cache'])
     await ui.press({ key: 'rail-progress' })
     await ui.unmount()
 
@@ -406,10 +420,10 @@ describe('desktop renderer', () => {
     const progress = icons.find(svg => String(svg.props.alt).startsWith('Progress'))
     expect(String(next?.props.alt)).toMatch(/^Next steps · \d+ new suggestions?$/)
     expect(progress?.props.alt).toBe('Progress · selected')
-    expect(String(next?.props.source)).toContain('<circle cx="32" cy="10" r="3" fill="#8B7CF6"/>')
+    expect(String(next?.props.source)).toContain('<circle cx="16.5" cy="8.5" r="3" fill="#8B7CF6"/>')
     expect(String(next?.props.source)).not.toContain('<rect')
-    expect(String(progress?.props.source)).toContain('<rect x="0" y="6" width="2"')
-    expect(next?.props).toMatchObject({ width: 44, height: 36 })
+    expect(String(progress?.props.source)).toContain('class="on"')
+    expect(next?.props).toMatchObject({ width: 24, height: 30 })
   })
 
   test('while the suggestions are being worked out the pane says so instead of saying there are none', async ($, on) => {
@@ -450,7 +464,7 @@ describe('desktop renderer', () => {
 
     const buttons = await stepButtons(ui)
     expect(buttons.map(b => b.key)).toEqual(['next-step-1', 'next-step-2', 'next-step-3'])
-    expect(buttons.every(b => b.props.hotkey === undefined && b.props.label === ' '.repeat(129))).toBe(true)
+    expect(buttons.every(b => b.props.hotkey === undefined && b.props.label === ' '.repeat(64))).toBe(true)
     expect((await ui.find({ type: 'Box', key: 'next-step-row-1' }))?.props).toMatchObject({ flexDirection: 'row', backgroundColor: '#80808014' })
     expect((await ui.find({ type: 'Box', key: 'next-step-accent-2' }))?.props).toMatchObject({ backgroundColor: '#3E8ED0' })
     expect((await ui.find({ type: 'Box', key: 'next-step-head-1' }))?.props).toMatchObject({ position: 'relative' })
@@ -508,7 +522,7 @@ describe('desktop renderer', () => {
     await completeTurn($, w)
     const ui = await pane($, 33)
 
-    expect((await labels(ui))[0]).toBe('✓ 修正したファイ…')
+    expect((await labels(ui))[0]).toBe('✓ 修正したファイルの…')
   })
 
   test('cuts a label by code point, never inside a surrogate pair', async ($, on) => {
@@ -516,7 +530,7 @@ describe('desktop renderer', () => {
     await completeTurn($, w)
     const ui = await pane($, 33)
 
-    expect((await labels(ui))[0]).toBe(`✓ ${'𝐀'.repeat(15)}…`)
+    expect((await labels(ui))[0]).toBe(`✓ ${'𝐀'.repeat(18)}…`)
   })
 
   test('a very narrow pane still keeps a readable piece of each label', async ($, on) => {

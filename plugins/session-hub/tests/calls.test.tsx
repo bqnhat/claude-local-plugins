@@ -2,6 +2,19 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On, RenderSurface } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
+
+const svgAltIn = (node: unknown): string | undefined => {
+  if (node === null || typeof node !== 'object') return undefined
+  const one = node as { type?: unknown; props?: { alt?: unknown }; children?: unknown }
+  if (one.type === 'Svg') return String(one.props?.alt)
+  return Array.isArray(one.children) ? one.children.map(svgAltIn).find(alt => alt !== undefined) : undefined
+}
+
+type Found = { key?: string }
+type Finder = { find: (q: { type: 'Box'; key: string }) => Promise<unknown>; findAll: (q: { type: 'Box' }) => Promise<Found[]> }
+const sectionTitle = async (ui: Finder): Promise<string | undefined> => svgAltIn(await ui.find({ type: 'Box', key: 'hub-title' }))
+const railAlts = async (ui: Finder): Promise<(string | undefined)[]> => (await ui.findAll({ type: 'Box' })).filter(box => String(box.key ?? '').startsWith('rail-cell-')).map(svgAltIn)
+
 const PLUGIN = 'session-hub'
 const PANE = 'session-hub'
 const TOOL = 'mcp__session-hub__plan_progress'
@@ -87,7 +100,8 @@ async function openCalls($: Engine, surface: RenderSurface = 'desktop') {
 
 async function paneText($: Engine, surface: RenderSurface = 'desktop'): Promise<string> {
   const ui = await mountPane($, surface)
-  const lines = (await ui.findAll({ type: 'Text' })).map(flat)
+  const title = await sectionTitle(ui)
+  const lines = [...(title !== undefined ? [title] : []), ...(await ui.findAll({ type: 'Text' })).map(flat)]
   const labels = (await ui.findAll({ type: 'Button' })).map(one => String(one.props.label))
   await ui.unmount()
   return [...labels, ...lines].join('\n')
@@ -132,7 +146,7 @@ describe('the Skills & agents section of Mod status', () => {
   test('sits on the rail after Next steps and starts with a hint', async ($, on) => {
     world(on)
     const ui = await mountPane($)
-    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress · selected', 'Next steps', 'Skills & agents', 'Cache'])
+    expect((await railAlts(ui))).toEqual(['Progress · selected', 'Next steps', 'Skills & agents', 'Cache'])
     await ui.press({ key: 'rail-calls' })
     await ui.unmount()
     const text = await paneText($)
@@ -368,7 +382,7 @@ describe('the Skills & agents section of Mod status', () => {
     const label = (await ui.find({ type: 'Button', key: 'calls-files-toggle' }))?.props.label
     await ui.unmount()
     expect(hit?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch', overflow: 'hidden' })
-    expect(String(label)).toBe(' '.repeat(255))
+    expect(String(label)).toBe(' '.repeat(122))
   })
 
   test('adds rule files loaded in the middle of a turn and marks them as this turn', async ($, on) => {
@@ -642,7 +656,7 @@ describe('the Skills & agents section of Mod status', () => {
     await startTurn($, 'build it', 't1')
     await $.tool.call({ tool: TOOL, id: 'task', title: 'Task', stages: [{ name: 'Work', steps: [{ title: 'One', status: 'active' }] }] })
     const ui = await mountPane($)
-    const header = (await ui.findAll({ type: 'Text' })).map(flat)
+    const header = [String(await sectionTitle(ui))]
     await ui.unmount()
     expect(header[0]).toBe('Progress')
   })
@@ -656,7 +670,7 @@ describe('the Skills & agents section of Mod status', () => {
     await openCalls($)
     await $.tool.call({ tool: TOOL, id: 'task', next: true })
     const ui = await mountPane($)
-    const header = (await ui.findAll({ type: 'Text' })).map(flat)
+    const header = [String(await sectionTitle(ui))]
     await ui.unmount()
     expect(header[0]).toBe('Skills & agents')
   })
@@ -668,7 +682,7 @@ describe('the Skills & agents section of Mod status', () => {
     await startTurn($, 'build it', 't1')
     await $.tool.call({ tool: TOOL, id: 'task', title: 'Task', stages: [{ name: 'Work', steps: [{ title: 'One', status: 'active' }] }] })
     const ui = await mountPane($)
-    const header = (await ui.findAll({ type: 'Text' })).map(flat)
+    const header = [String(await sectionTitle(ui))]
     await ui.unmount()
     expect(header[0]).toBe('Progress')
   })
@@ -692,8 +706,8 @@ describe('the Skills & agents section of Mod status', () => {
     await chip.unmount()
     const ui = await mountPane($)
     await ui.press({ key: 'rail-progress' })
-    const header = (await ui.findAll({ type: 'Text' })).map(flat)
-    const empty = (await ui.findAll({ type: 'Box' })).find(box => flat(box) === 'No progress bars yet. One appears when Claude starts a task with several steps.')
+    const header = [String(await sectionTitle(ui))]
+    const empty = (await ui.findAll({ type: 'Box' })).filter(box => flat(box) === 'No progress bars yet. One appears when Claude starts a task with several steps.').pop()
     await ui.unmount()
     expect(header[0]).toBe('Progress')
     expect(empty?.props.paddingX).toBe(1)
@@ -708,7 +722,7 @@ describe('the Skills & agents section of Mod status', () => {
     await chip.press({ key: 'hub-toggle' })
     await chip.unmount()
     const ui = await mountPane($)
-    const header = (await ui.findAll({ type: 'Text' })).map(flat)
+    const header = [String(await sectionTitle(ui))]
     await ui.unmount()
     expect(header[0]).toBe('Progress')
   })

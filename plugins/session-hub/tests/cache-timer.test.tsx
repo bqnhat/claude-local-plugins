@@ -115,7 +115,7 @@ describe('the cache countdown in the Desktop footer', () => {
     expect(await footer($)).toEqual({ text: '1:00', color: 'warning', dim: false })
 
     await w.clock.advance(60_000)
-    expect(await footer($)).toEqual({ text: 'expired', color: '#E5484D', dim: false })
+    expect(await footer($)).toEqual({ text: 'expired', color: 'error', dim: false })
   })
 
   test('a subagent request never restarts the countdown', async ($, on) => {

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mod status preview</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --page: #f3f2ee;
+  --text: #1f1e1d;
+  --dim: #73726c;
+  --border: #e4e2dc;
+  --blue: #2f6fdb;
+  --success: #1f7a3d;
+  --error: #c4302b;
+  --warning: #a8620a;
+  --claude: #d97757;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #262624;
+  --page: #1b1b19;
+  --text: #ecebe6;
+  --dim: #9d9b94;
+  --border: #3b3a36;
+  --blue: #7aa7ff;
+  --success: #5cc483;
+  --error: #f0716b;
+  --warning: #e8a548;
+  --claude: #e08b6c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 13px/19px "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; }
+.bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 16px; background: var(--page); border-bottom: 1px solid var(--border); }
+.bar select, .bar button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+.failed { margin: 12px 16px; padding: 8px 12px; border-radius: 8px; background: #fbe3e2; color: #8b1f1b; white-space: pre-wrap; }
+.grid { display: flex; flex-wrap: wrap; gap: 24px; padding: 16px; align-items: flex-start; }
+.card h2 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--dim); }
+.hub-pane { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.hub-pane-head { display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+.hub-pane-tools { color: var(--dim); }
+.hub-pane-body { padding: 0 8px 8px; }
+.hub-box { box-sizing: border-box; min-height: 0; }
+.hub-text { line-height: 19px; }
+.hub-button { font: inherit; line-height: 19px; color: var(--text); white-space: pre; overflow: hidden; text-overflow: ellipsis; min-width: 0; cursor: pointer; }
+.hub-button.plain { background: none; border: 0; padding: 0; text-align: left; }
+.hub-button.plain.dim { color: var(--dim); }
+.hub-button.native { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 10px; }
+.hub-button.native.primary { background: var(--text); color: var(--bg); }
+.hub-svg { display: block; max-width: 100%; flex-shrink: 0; }
+.hub-code { margin: 0; font: 12px/18px ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+.hub-markdown { white-space: pre-wrap; }
+.hub-link { color: var(--blue); }
+.hub-unknown { color: var(--error); }
+.single .bar, .single .card h2 { display: none; }
+.single .grid { padding: 8px; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <strong>Mod status preview</strong>
+  <label>Scenario <select id="scenario"><option value="">all</option></select></label>
+  <label>Width <select id="width"><option value="">all</option></select></label>
+  <button id="theme" type="button">Dark</button>
+  <span id="stamp"></span>
+</div>
+<div id="failed"></div>
+<div class="grid" id="grid"></div>
+<script>
+/*@@DATA@@*/
+/*@@RENDERER@@*/
+const params = new URLSearchParams(location.search)
+const one = params.get('shot')
+const shots = window.HUB_SHOTS || []
+const id = s => `${s.scenario}--${s.shot}--${s.columns}`
+const pick = (key, value) => {
+  const next = new URLSearchParams(location.search)
+  if (value) next.set(key, value)
+  else next.delete(key)
+  history.replaceState(null, '', `?${next}`)
+  draw()
+}
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark'
+  try { localStorage.setItem('hub-preview-theme', theme) } catch {}
+}
+function draw() {
+  const now = new URLSearchParams(location.search)
+  const scenario = now.get('scenario') || ''
+  const width = now.get('width') || ''
+  const grid = document.getElementById('grid')
+  grid.textContent = ''
+  for (const shot of shots) {
+    if (one && id(shot) !== one) continue
+    if (!one && scenario && shot.scenario !== scenario) continue
+    if (!one && width && String(shot.columns) !== width) continue
+    const card = document.createElement('div')
+    card.className = 'card'
+    const title = document.createElement('h2')
+    title.textContent = `${shot.scenario} · ${shot.shot} · ${shot.columns} cols`
+    card.appendChild(title)
+    card.appendChild(hubPane(shot))
+    grid.appendChild(card)
+  }
+}
+if (one) document.body.classList.add('single')
+let theme = params.get('theme')
+if (!theme) try { theme = localStorage.getItem('hub-preview-theme') } catch {}
+setTheme(theme === 'dark' ? 'dark' : 'light')
+document.getElementById('theme').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')
+const scenarios = [...new Set(shots.map(s => s.scenario))]
+const widths = [...new Set(shots.map(s => s.columns))]
+for (const s of scenarios) document.getElementById('scenario').add(new Option(s, s))
+for (const w of widths) document.getElementById('width').add(new Option(`${w} cols`, String(w)))
+document.getElementById('scenario').value = params.get('scenario') || ''
+document.getElementById('width').value = params.get('width') || ''
+document.getElementById('scenario').onchange = e => pick('scenario', e.target.value)
+document.getElementById('width').onchange = e => pick('width', e.target.value)
+document.getElementById('stamp').textContent = `${shots.length} shots · build ${window.HUB_VERSION}`
+if (window.HUB_FAILED) {
+  const box = document.getElementById('failed')
+  box.className = 'failed'
+  box.textContent = `plugin test reported failures:\n${window.HUB_FAILED}`
+}
+draw()
+if (location.protocol.startsWith('http') && !one) {
+  setInterval(async () => {
+    try {
+      const v = await (await fetch('/version', { cache: 'no-store' })).text()
+      if (v !== String(window.HUB_VERSION)) location.reload()
+    } catch {}
+  }, 1000)
+}
+</script>
+</body>
+</html>

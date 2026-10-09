@@ -112,6 +112,14 @@ async function svgSource($: Engine, alt: string, props: Partial<typeof PANE_PROP
   return svg === undefined ? undefined : String(svg.props.source)
 }
 
+async function title($: Engine): Promise<string | undefined> {
+  const ui = await pane($)
+  const box = await ui.find({ type: 'Box', key: 'hub-title' })
+  await ui.unmount()
+  const svg = (box?.children as { type?: string; props?: { alt?: unknown } }[] | undefined)?.find(one => one?.type === 'Svg')
+  return svg === undefined ? undefined : String(svg.props?.alt)
+}
+
 async function detailShown($: Engine, id: string): Promise<boolean> {
   const ui = await pane($)
   const detail = await ui.find({ type: 'Box', key: `detail-${id}` })
@@ -179,13 +187,14 @@ describe('the Progress pane on Desktop', () => {
     await $.tool.call({ tool: TOOL, id: 'first', next: true })
     expect(await rows($)).toEqual(['first', 'second'])
     expect(await texts($)).toContain('First task')
-    expect((await buttons($))['toggle-first']).toBe('\u00a0'.repeat(185))
+    expect((await buttons($))['toggle-first']).toBe('\u00a0'.repeat(90))
     const ui = await pane($)
     const hit = await ui.find({ type: 'Box', key: 'hit-first' })
     await ui.unmount()
     expect(hit?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch', overflow: 'hidden' })
     expect(await svgSource($, 'First task 50%')).toContain('stroke-dasharray')
-    expect(await texts($)).toEqual(expect.arrayContaining(['Active · 2', 'Step 2/2 · Two', 'Step 1/2 · One']))
+    expect(await texts($)).toEqual(expect.arrayContaining(['Step 2/2 · Two', 'Step 1/2 · One']))
+    expect(await texts($)).not.toContain('Active · 2')
     expect(await texts($)).not.toEqual(expect.arrayContaining(['1/2']))
     expect(await svgSource($, 'First task: ')).toBeUndefined()
   })
@@ -195,7 +204,7 @@ describe('the Progress pane on Desktop', () => {
     await create($, 'task', 'Task')
     await $.tool.call({ tool: TOOL, id: 'task', state: 'error', note: 'Broke' })
 
-    expect(await svgSource($, 'Task 0%')).toContain('stroke="#E5484D"')
+    expect(await svgSource($, 'Task 0%')).toContain('fill="#E5484D" fill-opacity=".22"')
     expect(await svgSource($, 'Progress ·')).toContain('fill="#E5484D"')
   })
 
@@ -236,10 +245,13 @@ describe('the Progress pane on Desktop', () => {
     expect(await svgSource($, 'Plan: ')).toBeUndefined()
 
     await press($, 'toggle-plan')
-    expect(await svgSource($, 'Plan: 1/4 steps')).toContain('<svg')
+    expect(await svgSource($, 'Plan: ')).toBeUndefined()
+    expect(await svgSource($, 'Read: done')).toContain('<svg')
+    expect(await svgSource($, 'Build: in progress')).toContain('<svg')
+    expect(await svgSource($, 'Ship: not started')).toContain('<svg')
     expect(await texts($)).toEqual(expect.arrayContaining(['Read', '1/1', 'Build', '0/2', 'Ship', '0/1', 'Code', 'Edit', 'Types', 'Test', 'Release', 'tests first']))
     expect(await svgSource($, 'Fold')).toContain('M3 4.5 6 7.5 9 4.5')
-    expect((await texts($)).filter(one => one.startsWith('Started '))).toHaveLength(1)
+    expect((await texts($)).filter(one => one.startsWith('Bắt đầu '))).toEqual([expect.stringMatching(/ · 1\/4 bước$/)])
     expect((await texts($)).some(one => one.includes('→'))).toBe(false)
 
     await press($, 'toggle-plan')
@@ -251,7 +263,7 @@ describe('the Progress pane on Desktop', () => {
   test('a press on the chevron opens and folds the bar as a press on its title does', async ($, on) => {
     world(on)
     await create($, 'plan')
-    expect((await buttons($))['chevron-plan']).toBe(' '.repeat(4))
+    expect((await buttons($))['chevron-plan']).toBe(' '.repeat(3))
     expect(await svgSource($, 'Open')).toContain('M4.5 3 7.5 6 4.5 9')
 
     await press($, 'chevron-plan')
@@ -263,27 +275,24 @@ describe('the Progress pane on Desktop', () => {
     expect(await texts($)).not.toContain('Two')
   })
 
-  test('the stepped bar colours each step by its state and leaves a wider gap between stages', async ($, on) => {
+  test('a one-stage list keeps its stepped bar and colours each step by its state', async ($, on) => {
     world(on)
     await $.tool.call({
       tool: TOOL,
       id: 'plan',
       title: 'Plan',
-      stages: [
-        { name: 'Read', steps: [{ title: 'Code', status: 'done' }] },
-        { name: 'Build', steps: [{ title: 'Edit', status: 'active' }, { title: 'Test', status: 'pending' }] },
-      ],
+      stages: [{ name: 'Work', steps: [{ title: 'Code', status: 'done' }, { title: 'Edit', status: 'active' }, { title: 'Test', status: 'pending' }] }],
     })
     await press($, 'toggle-plan')
     const source = (await svgSource($, 'Plan: ')) ?? ''
 
     expect(source.match(/<rect /g)?.length).toBe(3)
-    expect(source).toContain('fill="#30A46C" fill-opacity="1"')
+    expect(source).toContain('fill="#1D9E75" fill-opacity="1"')
     expect(source).toContain('fill="#8B7CF6" fill-opacity="1"')
     expect(source).toContain('fill="#8A8984" fill-opacity="0.3"')
     expect(source).toContain('viewBox="0 0 1400 4" preserveAspectRatio="none"')
-    expect(source).toContain('<rect x="470.7"')
-    expect(source).toContain('<rect x="936.3"')
+    expect(source).toContain('<rect x="467.3"')
+    expect(source).toContain('<rect x="934.7"')
     expect(await svgSource($, 'Plan: ', { bodyColumns: 20 })).toBe(source)
   })
 
@@ -305,7 +314,7 @@ describe('the Progress pane on Desktop', () => {
     await $.tool.call({ tool: TOOL, id: 'task', state: 'needs_input', note: 'Pick a name' })
 
     expect(await texts($)).toContain('Waiting on you · Pick a name')
-    expect(await svgSource($, 'task 0%')).toContain('M9.09 9a3')
+    expect(await svgSource($, 'task 0%')).toContain('M9.2 9.2a2.9')
   })
 
   test('state done finishes every step still open, substeps too, and stops their clocks', async ($, on) => {
@@ -324,7 +333,7 @@ describe('the Progress pane on Desktop', () => {
     await press($, 'toggle-job')
     await clock.advance(5000)
     const all = await texts($)
-    expect(all.filter(text => /^\d+\/\d+/.test(text)).map(text => text.split(' ')[0])).toEqual(['2/2', '1/1'])
+    expect(all.filter(text => text.endsWith(' bước'))).toEqual([expect.stringMatching(/ · 3\/3 bước$/)])
     expect(all.filter(text => text === '●' || text === '○')).toEqual([])
     expect(all.some(text => text.endsWith('…'))).toBe(false)
   })
@@ -343,7 +352,7 @@ describe('the Progress pane on Desktop', () => {
       await finish($, id)
       await press($, `toggle-${id}`)
       const all = await texts($)
-      expect(all.filter(text => /^\d+\/\d+/.test(text)).map(text => text.split(' ')[0])).toEqual(['2/2', '1/1'])
+      expect(all.filter(text => text.endsWith(' bước'))).toEqual([expect.stringMatching(/ · 3\/3 bước$/)])
       expect(all.filter(text => ['●', '○', '!'].includes(text))).toEqual([])
       await press($, `toggle-${id}`)
     }
@@ -357,8 +366,10 @@ describe('the Progress pane on Desktop', () => {
     const ui = await pane($)
     const marks = (await ui.findAll({ type: 'Box' })).filter(box => (box.key ?? '').endsWith('-mark'))
     await ui.unmount()
-    expect(marks.map(flat)).toEqual(['✓', '!', '○'])
-    expect(marks.map(box => box.props.width)).toEqual([1, 1, 1])
+    const dots = marks.map(box => String((box.children as { type?: string; props: { source?: unknown } }[])[0]?.props.source))
+    expect(dots.map(source => /fill="(#[0-9A-F]{6})"/.exec(source)?.[1])).toEqual(['#1D9E75', '#E5484D', '#8A8984'])
+    expect(dots[2]).toContain('fill-opacity=".45"')
+    expect(marks.map(box => box.props.width)).toEqual([0.75, 0.75, 0.75])
   })
 
   test('a row counts the agents at work, and its details list each agent with its tool and time', async ($, on) => {
@@ -372,7 +383,7 @@ describe('the Progress pane on Desktop', () => {
     expect(await texts($)).toEqual(expect.arrayContaining(['Agents', '1 running', 'Scout', 'Starting', '3s']))
 
     await finishAgent($, 'use-1')
-    expect(await texts($)).toEqual(expect.arrayContaining(['Step 1/2 · One', '1 done', 'Done']))
+    expect(await texts($)).toEqual(expect.arrayContaining([expect.stringMatching(/^Bắt đầu \d\d:\d\d · 0\/2 bước$/), '1 done', 'Done']))
   })
 
   test('Hide in the details hides one bar, and the pane stays up after the last one', async ($, on) => {
@@ -401,7 +412,7 @@ describe('the Progress pane on Desktop', () => {
 
     await press($, 'older')
     expect(await rows($)).toEqual(['second', 'first'])
-    expect((await buttons($))['close-first']).toBe('Show again')
+    expect((await buttons($))['close-first']).toBe('Hiện lại')
 
     await press($, 'close-first')
     expect((await rows($)).sort()).toEqual(['first', 'second'])
@@ -637,7 +648,7 @@ describe('when the Progress pane opens and closes', () => {
 
     await spawn($, 'use-1', 'Scout')
     expect([...w.panes]).toEqual([PANE])
-    expect((await texts($))[0]).toBe('Progress')
+    expect(await title($)).toBe('Progress')
     expect(await rows($)).toEqual(['agents:auto'])
   })
 
@@ -783,7 +794,7 @@ describe('what a row says', () => {
     await press($, 'toggle-finished')
     const all = await texts($)
 
-    expect(all.some(one => /^Started \d\d:\d\d · done \d\d:\d\d/.test(one))).toBe(true)
+    expect(all.some(one => /^Bắt đầu \d\d:\d\d · xong \d\d:\d\d · 2\/2 bước$/.test(one))).toBe(true)
     expect(all.some(one => one.startsWith('Done at '))).toBe(false)
   })
 
@@ -805,7 +816,7 @@ describe('what a row says', () => {
     await create($, 'task')
     await $.tool.call({ tool: TOOL, id: 'task', next: true })
 
-    expect(await svgSource($, 'task 50%')).toContain('stroke-dasharray="25.1 50.3"')
+    expect(await svgSource($, 'task 50%')).toContain('stroke-dasharray="28.3 56.5"')
   })
 
   test('the row shows how long the bar has run', async ($, on) => {

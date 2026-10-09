@@ -76,7 +76,7 @@ describe('agents that end without their own turn end', () => {
     w.listed = [listed('agent-a', 'killed'), listed('agent-b', 'running')]
     await w.clock.advance(5000)
 
-    expect(await details($)).toEqual(expect.arrayContaining(['Stopped', '1 running · 1 failed', '0/2 agents done']))
+    expect(await details($)).toEqual(expect.arrayContaining(['Stopped', '1 running · 1 failed', expect.stringMatching(/^Bắt đầu \d\d:\d\d · 0\/2 agents done$/)]))
   })
 
   test('the last agent the engine lists as completed finishes the Agents bar', async ($, on) => {

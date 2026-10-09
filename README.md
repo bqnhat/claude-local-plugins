@@ -6,7 +6,7 @@ Function-hooks plugins ("mods") for [Claude Code](https://claude.com/claude-code
 
 | Plugin | Version | What it does |
 | --- | --- | --- |
-| [`session-hub`](plugins/session-hub) | `0.1.0-local.62` | **Recommended.** One "Mod status" pane with Progress bars, Next steps suggestions, the skills and agents called this session, and prompt-cache usage, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
+| [`session-hub`](plugins/session-hub) | `0.1.0-local.63` | **Recommended.** One "Mod status" pane with Progress bars, Next steps suggestions, the skills and agents called this session, and prompt-cache usage, plus a prompt-cache countdown in the footer. Combines the three plugins below. |
 | [`plan-progress`](plugins/plan-progress) | `0.3.0-local.15` | Live plan progress bars with stages, steps, step times and sounds. Fork of [zycck/claude-mods](https://github.com/zycck/claude-mods) `plan-progress`. |
 | [`next-steps-desktop`](plugins/next-steps-desktop) | `1.0.0-desktop.15` | Up to three suggested next prompts after each turn. Fork of Anthropic's [`next-steps`](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps). |
 | [`cache-timer`](plugins/cache-timer) | `0.1.0-local.3` | A `Cache mm:ss` countdown in the Desktop footer showing how long the prompt cache stays warm. |
@@ -37,7 +37,7 @@ Start a new session afterwards. To pick up a newer version, run `claude plugin m
 - **Progress section.** The model gets a `plan_progress` tool (`mcp__session-hub__plan_progress`) and a short rule with the first prompt. Larger tasks get a bar of stages and steps, with step times and soft sounds for "needs a decision", "error" and "done". If the model starts a fourth file edit or changing shell command in a turn without a bar, that call is refused once and the model is told to create one. A plan accepted from plan mode becomes a bar, and subagents started outside a plan get an automatic Agents bar. Finished bars stay in a history list.
 - **Next steps section.** After each answer, the plugin forks the session and asks for up to three next prompts, one per kind: `✓` verify (or `⚖` decide), `🔍` dig, `→` advance. On Desktop each card has an accent bar in the colour of its kind and text glyphs (`✓`, `⌕`, `→`, `⇄`), a `▸ Chi tiết` toggle that opens the detail inside the card, and a `Điền ↵` button. Clicking a card or `Điền ↵` puts its prompt in the composer as a draft. The plugin never sends a prompt on its own. The fork prompt asks for labels in Vietnamese.
 - **Skills & agents section.** Lists the skills and agents called this session, grouped by turn and each tagged personal, project, plugin or built-in, and the rule and `CLAUDE.md` files the session loaded.
-- **Cache section.** Built from the main loop's requests in this session; subagent requests are left out. The header shows the cache lifetime, the time left and the turn count, and the last request's read, wrote and new tokens with its hit rate. Two views:
+- **Cache section.** Built from the main loop's requests in this session; subagent requests are left out. The header holds the Tokens / Savings switch, then the last request's read, wrote and new tokens with its hit rate. A card at the foot of the pane counts the cache lifetime down under every section. Two views:
   - **Tokens.** A chart of stacked read, wrote and new tokens per turn with a hit-rate line (green at 80% or more, orange at 40% or more, red below), session totals, and a table of the last 12 turns. Each turn's tokens add up every request in it, so a turn with many tool calls re-reads the whole context many times.
   - **Savings.** Running totals of cache reads and writes, and an estimate in input-token equivalents: reads save 0.975 of the input price on Claude Fable 5.1 and Claude Mythos 5.1, 0.95 on Claude Opus 5.5 and 0.9 on other models, writes cost 1 extra with the one-hour cache and 0.25 with the five-minute one. Output tokens are not counted, and the figures are list-price ratios, not your bill.
 
@@ -84,6 +84,20 @@ Validate and test a plugin from its folder:
 claude plugin validate .
 claude plugin test .
 ```
+
+### Preview the Mod status pane without a session
+
+`tools/hub-preview` draws the session-hub pane from fixed sample data, so a layout change can be checked in seconds instead of in a new Claude session. `fixtures.test.tsx` builds each sample (a failed bar with a timeline, mixed running / waiting / done bars, four cache turns, an expiring or expired cache, and more) through the plugin's own hooks with `claude plugin test`, and `renderer.js` paints the drawn tree in HTML at the desktop's scale of 8px per cell.
+
+```bash
+node tools/hub-preview/preview.mjs --shots
+```
+
+```bash
+node tools/hub-preview/preview.mjs --serve --watch
+```
+
+The first writes `tools/hub-preview/out/index.html` and one PNG per sample and width into `out/shots` (Playwright's headless shell, Chrome or Edge; `--theme dark` for the dark theme). The second serves the gallery on `http://127.0.0.1:4720/` and reloads it whenever `hooks/register.tsx` or a fixture changes. `--only <name>` keeps matching samples, `--widths 44,76` sets the pane widths in columns, and `CLAUDE_BIN` points at a `claude` binary when the one on `PATH` is older than the desktop's. The HTML is an approximation of the desktop renderer: check the final result once in the real pane.
 
 This repository is the only place these plugins are developed. The former standalone repositories [`bqnhat/plan-progress`](https://github.com/bqnhat/plan-progress) and [`bqnhat/next-steps-desktop`](https://github.com/bqnhat/next-steps-desktop) are archived.
 

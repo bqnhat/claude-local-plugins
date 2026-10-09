@@ -2,6 +2,19 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On, RenderSurface } from 'claude-code'
 import type { Engine, MockClock } from 'claude-code/testing'
 
+
+const svgAltIn = (node: unknown): string | undefined => {
+  if (node === null || typeof node !== 'object') return undefined
+  const one = node as { type?: unknown; props?: { alt?: unknown }; children?: unknown }
+  if (one.type === 'Svg') return String(one.props?.alt)
+  return Array.isArray(one.children) ? one.children.map(svgAltIn).find(alt => alt !== undefined) : undefined
+}
+
+type Found = { key?: string }
+type Finder = { find: (q: { type: 'Box'; key: string }) => Promise<unknown>; findAll: (q: { type: 'Box' }) => Promise<Found[]> }
+const sectionTitle = async (ui: Finder): Promise<string | undefined> => svgAltIn(await ui.find({ type: 'Box', key: 'hub-title' }))
+const railAlts = async (ui: Finder): Promise<(string | undefined)[]> => (await ui.findAll({ type: 'Box' })).filter(box => String(box.key ?? '').startsWith('rail-cell-')).map(svgAltIn)
+
 const PLUGIN = 'session-hub'
 const PANE = 'session-hub'
 const PANE_PROPS = {
@@ -82,6 +95,13 @@ async function texts($: Engine, surface: RenderSurface = 'desktop'): Promise<str
   return lines
 }
 
+async function tilesAlt($: Engine): Promise<string | undefined> {
+  const ui = await mountPane($)
+  const alt = svgAltIn(await ui.find({ type: 'Box', key: 'cache-tiles' }))
+  await ui.unmount()
+  return alt
+}
+
 async function tableRows($: Engine): Promise<string[]> {
   const ui = await mountPane($)
   const rows = (await ui.findAll({ type: 'Box' })).filter(box => String(box.key ?? '').startsWith('cache-row-'))
@@ -94,7 +114,7 @@ describe('the Cache section of Mod status', () => {
   test('sits last on the rail and says so before the first request', async ($, on) => {
     world(on)
     const ui = await mountPane($)
-    expect((await ui.findAll({ type: 'Svg' })).map(svg => svg.props.alt)).toEqual(['Progress · selected', 'Next steps', 'Skills & agents', 'Cache'])
+    expect((await railAlts(ui))).toEqual(['Progress · selected', 'Next steps', 'Skills & agents', 'Cache'])
     await ui.press({ key: 'rail-cache' })
     await ui.unmount()
 
@@ -120,8 +140,8 @@ describe('the Cache section of Mod status', () => {
 
     expect(await tableRows($)).toEqual(['2 1 80k 1k 300 98%', '1 2 50k 51k 300 49%'])
     const lines = await texts($)
-    expect(lines).toContain('Session totals · 2 turns · 3 requests')
-    expect(lines).toContain('71% hit')
+    expect(lines).toContain('Session · 2 turns · 3 requests')
+    expect(await tilesAlt($)).toBe('Read 130k · Wrote 52k · New 600 · Hit 71%')
   })
 
   test('the last request shows what it read, wrote and sent new, with its hit rate', async ($, on) => {
@@ -147,10 +167,10 @@ describe('the Cache section of Mod status', () => {
     expect(rows).toHaveLength(12)
     expect(rows[0]?.startsWith('14 ')).toBe(true)
     expect(rows[11]?.startsWith('3 ')).toBe(true)
-    expect(await texts($)).toContain('Session totals · 14 turns · 14 requests')
+    expect(await texts($)).toContain('Session · 14 turns · 14 requests')
   })
 
-  test('the table columns shrink to a narrow pane while the turn number keeps its room', async ($, on) => {
+  test('the table columns shrink to a narrow pane while the turn number and hit rate keep their room', async ($, on) => {
     const w = world(on)
     await press($, 'rail-cache')
     await request($, w, 't1', { read: 1_770_000, write: 34_700, fresh: 26 })
@@ -158,12 +178,13 @@ describe('the Cache section of Mod status', () => {
     const ui = await mountPane($)
     const boxes = await ui.findAll({ type: 'Box' })
     await ui.unmount()
-    const numbers = boxes.filter(box => /^cache-(th|steps|read|write|new|hit)-/.test(String(box.key ?? '')))
-    expect(numbers.length).toBeGreaterThan(0)
-    for (const box of numbers) expect(box.props).toMatchObject({ flexShrink: 1, minWidth: 0 })
-    const turnCells = boxes.filter(box => box.props.width === 4)
-    expect(turnCells.length).toBeGreaterThanOrEqual(2)
-    for (const box of turnCells) expect(box.props.flexShrink).toBe(0)
+    const keyed = (pattern: RegExp) => boxes.filter(box => pattern.test(String(box.key ?? '')))
+    const shrinking = keyed(/^cache-(steps|read|write|new)-\d+$|^cache-th-(steps|read|write|new)$/)
+    expect(shrinking).toHaveLength(8)
+    for (const box of shrinking) expect(box.props).toMatchObject({ flexShrink: 1, minWidth: 0 })
+    const fixed = keyed(/^cache-(turn|hit)-\d+$|^cache-th-(turn|hit)$/)
+    expect(fixed).toHaveLength(4)
+    for (const box of fixed) expect(box.props.flexShrink).toBe(0)
   })
 
   test('the head holds only the view tabs and the cache lifetime moves to the footer of the pane', async ($, on) => {
@@ -172,12 +193,13 @@ describe('the Cache section of Mod status', () => {
     await request($, w, 't1', { read: 1000, write: 0, fresh: 0 })
 
     const ui = await mountPane($)
-    const head = await ui.find({ type: 'Box', key: 'cache-head' })
+    const tabs = await ui.find({ type: 'Box', key: 'cache-tabs' })
     const ttl = await ui.find({ type: 'Box', key: 'cache-head-ttl' })
     const buttons = (await ui.findAll({ type: 'Button' })).map(b => String(b.key ?? ''))
     await ui.unmount()
-    expect(head?.props.flexWrap).toBe('wrap')
+    expect(tabs).toBeDefined()
     expect(ttl).toBeUndefined()
+    expect(await texts($)).not.toContain('100% hit')
     expect(buttons).toEqual(expect.arrayContaining(['cache-view-tokens', 'cache-view-savings']))
     expect((await texts($)).some(line => / cache( · |$)/.test(line) && line.includes('turn'))).toBe(false)
   })
@@ -189,16 +211,16 @@ describe('the Cache section of Mod status', () => {
 
     await request($, w, 't1', { read: 1000, write: 500, fresh: 0 })
     const warm = await texts($)
-    expect(['⏱ Cache warm · ~5m', '5m left', '1.5k cached'].filter(one => !warm.includes(one))).toEqual([])
+    expect(['Cache warm · ~5m', '5m left', '~1.5k giữ lại'].filter(one => !warm.includes(one))).toEqual([])
     expect(warm.some(line => line.startsWith('Expires '))).toBe(true)
 
     await w.clock.advance(4 * 60_000 + 30_000)
     const expiring = await texts($)
-    expect(['⏱ Cache expiring · ~5m', '<1m left'].filter(one => !expiring.includes(one))).toEqual([])
+    expect(['Cache expiring · ~5m', '<1m left'].filter(one => !expiring.includes(one))).toEqual([])
 
     await w.clock.advance(60_000)
     const expired = await texts($)
-    expect(expired).toContain('⏱ Cache expired · ~5m')
+    expect(expired).toContain('Cache expired · ~5m')
     expect(expired.some(line => line.endsWith(' left'))).toBe(false)
     expect(expired.some(line => line.startsWith('Expired '))).toBe(true)
   })
@@ -209,13 +231,13 @@ describe('the Cache section of Mod status', () => {
     await request($, w, 't1', { read: 100_000, write: 10_000, fresh: 0 })
     await press($, 'cache-view-savings')
 
+    expect(await tilesAlt($)).toBe('Saved by reads 90k, read × 0.9 − Extra writes 2.5k, wrote × 0.25 = Net saved 87.5k, ≈ 80% input')
     const lines = await texts($)
-    expect(['Saved by reads', '≈ 90k', 'Extra for writes', '≈ 2.5k', 'Net saved', '≈ 87.5k', '≈ 80% of input'].filter(one => !(lines).includes(one))).toEqual([])
-    expect(lines).not.toContain('Session totals · 1 turn · 1 request')
-    expect(await texts($)).toContain('Saved by reads')
+    expect(lines).toContain('Input tokens at list-price ratios. Not your bill.')
+    expect(lines).not.toContain('Session · 1 turn · 1 request')
 
     await press($, 'cache-view-tokens')
-    expect(await texts($)).toContain('Session totals · 1 turn · 1 request')
+    expect(await texts($)).toContain('Session · 1 turn · 1 request')
   })
 
   test('a one-hour cache counts writes at twice the input price', async ($, on) => {
@@ -226,8 +248,7 @@ describe('the Cache section of Mod status', () => {
     await request($, w, 't2', { read: 100_000, write: 0, fresh: 0 })
     await press($, 'cache-view-savings')
 
-    const lines = await texts($)
-    expect(['≈ 10k', 'wrote × 1'].filter(one => !lines.includes(one))).toEqual([])
+    expect(await tilesAlt($)).toContain(' − Extra writes 10k, wrote × 1 = ')
   })
 
   test('reads on a model without its own cache price save 0.9 of the input price', async ($, on) => {
@@ -236,8 +257,7 @@ describe('the Cache section of Mod status', () => {
     await request($, w, 't1', { read: 100_000, write: 0, fresh: 0 })
     await press($, 'cache-view-savings')
 
-    const lines = await texts($)
-    expect(['≈ 90k', 'read × 0.9'].filter(one => !lines.includes(one))).toEqual([])
+    expect(await tilesAlt($)).toMatch(/^Saved by reads 90k, read × 0.9 − /)
   })
 
   test('reads on Claude Opus 5.5 save 0.95 of the input price', async ($, on) => {
@@ -246,8 +266,7 @@ describe('the Cache section of Mod status', () => {
     await request($, w, 't1', { read: 100_000, write: 10_000, fresh: 0 })
     await press($, 'cache-view-savings')
 
-    const lines = await texts($)
-    expect(['≈ 95k', 'read × 0.95', '≈ 2.5k', '≈ 92.5k', '≈ 84% of input'].filter(one => !lines.includes(one))).toEqual([])
+    expect(await tilesAlt($)).toBe('Saved by reads 95k, read × 0.95 − Extra writes 2.5k, wrote × 0.25 = Net saved 92.5k, ≈ 84% input')
   })
 
   test('reads on Claude Fable 5.1 and Claude Mythos 5.1 save 0.975 of the input price', async ($, on) => {
@@ -258,8 +277,7 @@ describe('the Cache section of Mod status', () => {
     await request($, w, 't2', { read: 100_000, write: 10_000, fresh: 0 })
     await press($, 'cache-view-savings')
 
-    const lines = await texts($)
-    expect(['≈ 195k', 'read × 0.975', '≈ 2.5k', '≈ 193k', '≈ 92% of input'].filter(one => !lines.includes(one))).toEqual([])
+    expect(await tilesAlt($)).toBe('Saved by reads 195k, read × 0.975 − Extra writes 2.5k, wrote × 0.25 = Net saved 193k, ≈ 92% input')
   })
 
   test('a session that switches models counts each request at its own model price', async ($, on) => {
@@ -270,8 +288,7 @@ describe('the Cache section of Mod status', () => {
     await request($, w, 't2', { read: 100_000, write: 0, fresh: 0 })
     await press($, 'cache-view-savings')
 
-    const lines = await texts($)
-    expect(['≈ 185k', 'read × 0.925'].filter(one => !lines.includes(one))).toEqual([])
+    expect(await tilesAlt($)).toMatch(/^Saved by reads 185k, read × 0.925 − /)
   })
 
   test('/clear starts the numbers over', async ($, on) => {
@@ -290,7 +307,9 @@ describe('the Cache section of Mod status', () => {
     await footer.press({ key: 'hub-cache-chip' })
     await footer.unmount()
 
-    expect(await texts($)).toContain('Cache')
+    const ui = await mountPane($)
+    expect(await sectionTitle(ui)).toBe('Cache')
+    await ui.unmount()
     expect(await tableRows($)).toEqual(['1 1 80k 1k 300 98%'])
   })
 })
