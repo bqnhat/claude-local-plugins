@@ -1,6 +1,6 @@
 {
   "name": "session-hub",
-  "version": "0.1.0-local.70",
+  "version": "0.1.0-local.71",
   "description": "One Mod status pane for Claude Code Desktop with an icon rail: Progress (live plan bars with step times and history, forked from zycck/claude-mods plan-progress), Next steps (up to three suggested next prompts; a click puts one in the composer), Skills & agents (the skills and agents called this session, each tagged personal, project, plugin or built-in, plus the rule and CLAUDE.md files loaded) and Cache (cache reads, writes and hit rate per turn, and what the cache saved). One footer entry opens the pane; the terminal keeps the progress band and the next-steps band",
   "author": {
     "name": "bqnhat"

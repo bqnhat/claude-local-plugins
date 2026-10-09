@@ -502,7 +502,7 @@ describe('many finished bars', () => {
     }
   }
 
-  test('Done lists the three newest in full and folds the rest behind Show N older', async ($, on) => {
+  test('Done lists the three newest and folds the rest behind Show N older, drawn the same way', async ($, on) => {
     const { clock } = world(on)
     await fiveDone($, clock)
 
@@ -513,7 +513,7 @@ describe('many finished bars', () => {
     await press($, 'older')
     expect(await rows($)).toEqual(['e', 'd', 'c', 'b', 'a'])
     expect((await buttons($)).older).toBe('Show fewer')
-    expect(await svgSource($, 'b ')).toBeUndefined()
+    expect(await svgSource($, 'b ')).toContain('<svg')
 
     await press($, 'toggle-a')
     expect(await svgSource($, 'a: ')).toContain('<svg')
@@ -583,7 +583,7 @@ describe('many finished bars', () => {
     expect(kept).not.toContain('done-1')
   })
 
-  test('a folded row of an older bar shows its title and the time it finished', async ($, on) => {
+  test('a folded row of an older bar shows its title and the time it finished, like the newer ones', async ($, on) => {
     const { clock } = world(on)
     await fiveDone($, clock)
     await press($, 'older')
@@ -592,7 +592,7 @@ describe('many finished bars', () => {
     const words = (older ? flat(older) : '').trim()
     await ui.unmount()
 
-    expect(words).toMatch(/^✓\s*.*\d\d:\d\d/)
+    expect(words).toMatch(/^a.*Done at \d\d:\d\d$/)
   })
 })
 
@@ -786,7 +786,7 @@ describe('what a row says', () => {
     expect(all.some(one => /^Done at \d\d:\d\d$/.test(one))).toBe(true)
   })
 
-  test('an opened finished bar says its start, end and length once, in its detail line', async ($, on) => {
+  test('an opened finished bar keeps its Done at line and adds its start and step count in the detail line', async ($, on) => {
     world(on)
     await create($, 'finished')
     await finish($, 'finished')
@@ -794,8 +794,8 @@ describe('what a row says', () => {
     await press($, 'toggle-finished')
     const all = await texts($)
 
-    expect(all.some(one => /^Started \d\d:\d\d · done \d\d:\d\d · 2\/2 steps$/.test(one))).toBe(true)
-    expect(all.some(one => one.startsWith('Done at '))).toBe(false)
+    expect(all.some(one => /^Started \d\d:\d\d · 2\/2 steps$/.test(one))).toBe(true)
+    expect(all.filter(one => one.startsWith('Done at '))).toHaveLength(1)
   })
 
   test('the Progress pane leaves the Agents bar out, its agents stay in the band above the prompt', async ($, on) => {
@@ -807,7 +807,7 @@ describe('what a row says', () => {
     expect(await texts($)).toContain('No progress bars yet. One appears when Claude starts a task with several steps.')
   })
 
-  test('an open bar draws its title large, indents its stages and hangs each stage\'s steps on one plain guide', async ($, on) => {
+  test('an open bar keeps the same title and summary line as when folded and hangs each stage\'s steps on one plain guide', async ($, on) => {
     world(on)
     await $.tool.call({
       tool: TOOL,
@@ -818,12 +818,19 @@ describe('what a row says', () => {
         { name: 'Edit', steps: [{ title: 'Pin footer', status: 'active' }, { title: 'Test', status: 'pending' }] },
       ],
     })
+    const head = async () => {
+      const ui = await pane($)
+      const row = await ui.find({ type: 'Box', key: 'row-plan' })
+      const keys = (await ui.findAll({ type: 'Box' })).map(box => box.key ?? '')
+      await ui.unmount()
+      return { words: row ? flat(row) : '', keys }
+    }
+    const folded = await head()
     await press($, 'toggle-plan')
-    const ui = await pane($)
-    const keys = (await ui.findAll({ type: 'Box' })).map(box => box.key ?? '')
-    const big = (await ui.findAll({ type: 'Svg' })).find(one => one.props.alt === 'Pin the cache bar')
-    await ui.unmount()
-    expect(String(big?.props.source)).toContain('font-size="20"')
+    const open = await head()
+    expect(open.words).toBe(folded.words)
+    expect(folded.words).toContain('Step 2/3')
+    const keys = open.keys
     expect(keys.filter(key => key.startsWith('step-guide-plan-'))).toHaveLength(2)
     expect(keys.filter(key => key.startsWith('stage-guide-') || key.includes('elbow'))).toEqual([])
   })
