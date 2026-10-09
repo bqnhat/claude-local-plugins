@@ -1369,9 +1369,9 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const finishedSteps = p.stages.flatMap(s => s.steps).filter(step => isFinished(step.status)).length
     const chip = Svg && p.id !== AGENTS ? chipSvg(STATE_CHIP[p.state], color) : null
     const meta = Svg
-      ? `Bắt đầu ${clockTime(p.startedAt)}${p.state === 'done' ? ` · xong ${clockTime(touchedAt(p))}` : ''}${p.id === AGENTS ? ` · ${overview(p, w)}` : ` · ${finishedSteps}/${w.total} bước`}`
+      ? `Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${p.id === AGENTS ? ` · ${overview(p, w)}` : ` · ${finishedSteps}/${w.total} steps`}`
       : `Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${took ? ` · ${took}` : ''}`
-    const hideWord = Svg ? (p.hidden ? 'Hiện lại' : 'Ẩn') : p.hidden ? 'Show again' : 'Hide'
+    const hideWord = p.hidden ? 'Show again' : 'Hide'
 
     return (
       <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={Svg ? 1 : DETAIL_INDENT} marginRight={1} marginTop={Svg ? 0.5 : 0} marginBottom={1} minWidth={0}>
@@ -2347,7 +2347,7 @@ const CARD_INSET = 3
 const CARD_BG = '#80808014'
 const KIND_COLOR: Record<SuggestionKind, string> = { verify: GREEN, dig: '#3E8ED0', advance: ORANGE, decide: PURPLE }
 const CARD_GLYPH: Record<SuggestionKind, string> = { verify: '✓', dig: '⌕', advance: '→', decide: '⇄' }
-const GOAL_PREFIX = 'Mục tiêu: '
+const GOAL_PREFIX = 'Goal: '
 
 async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<RenderElement> {
   const t = $.ui.resolve(e)
@@ -3051,7 +3051,7 @@ async function cacheSection($: EngineInterface, e: RenderInput<'Pane'>): Promise
   const share = Math.round((net / Math.max(1, promptOf(total))) * 100)
   const savingsView = [
     <Box key="cache-legend" flexDirection="row" flexWrap="wrap" columnGap={1.5} paddingX={1} marginTop={1} minWidth={0}>
-      {legendItem('cache-legend-read', 'line', 'read tích lũy', READ_COLOR)}
+      {legendItem('cache-legend-read', 'line', 'read total', READ_COLOR)}
       {legendItem('cache-legend-write', 'line', 'written', WRITE_FILL)}
     </Box>,
     <Box key="cache-chart" paddingX={1} marginTop={0.5}>
@@ -3125,7 +3125,7 @@ async function cacheFooter($: EngineInterface, e: RenderInputOf<'Pane'>): Promis
         <Box flexGrow={1} minWidth={0}>
           {line('hub-cache-footer-until', `${c.isWarm ? 'Expires' : 'Expired'} ${until}`)}
         </Box>
-        {last === undefined || !c.isWarm ? [] : [line('hub-cache-footer-kept', `~${tokens(last.read + last.write)} giữ lại`)]}
+        {last === undefined || !c.isWarm ? [] : [line('hub-cache-footer-kept', `~${tokens(last.read + last.write)} cached`)]}
       </Box>
     </Box>,
   ]

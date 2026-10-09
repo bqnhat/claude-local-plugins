@@ -234,7 +234,7 @@ const footer = ($: Engine, surface: 'desktop' | 'terminal' = 'desktop') =>
 type Drawn = { findAll: (q: { type: 'Text' | 'Button' }) => Promise<{ key?: string; text?: string; props: Record<string, unknown> }[]> }
 
 async function rowTexts(ui: Drawn) {
-  return (await ui.findAll({ type: 'Text' })).slice(1).filter(t => !String(t.text).startsWith('Mục tiêu: '))
+  return (await ui.findAll({ type: 'Text' })).slice(1).filter(t => !String(t.text).startsWith('Goal: '))
 }
 
 async function labels(ui: Drawn): Promise<string[]> {
@@ -246,7 +246,7 @@ async function whys(ui: Drawn): Promise<string[]> {
 }
 
 async function goalLine(ui: Drawn): Promise<string | undefined> {
-  const found = (await ui.findAll({ type: 'Text' })).find(t => String(t.text).startsWith('Mục tiêu: '))
+  const found = (await ui.findAll({ type: 'Text' })).find(t => String(t.text).startsWith('Goal: '))
   return found === undefined ? undefined : String(found.text)
 }
 
@@ -791,7 +791,7 @@ describe('suggestion shape', () => {
     await completeTurn($, w)
     const ui = await pane($)
 
-    expect(await goalLine(ui)).toBe('Mục tiêu: Ship the settings fix [v2]')
+    expect(await goalLine(ui)).toBe('Goal: Ship the settings fix [v2]')
     expect(await labels(ui)).toEqual(['✓ Run the tests', '⌕ Review it', '→ Settings page'])
   })
 

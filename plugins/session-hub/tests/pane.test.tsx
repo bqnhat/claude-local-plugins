@@ -251,7 +251,7 @@ describe('the Progress pane on Desktop', () => {
     expect(await svgSource($, 'Ship: not started')).toContain('<svg')
     expect(await texts($)).toEqual(expect.arrayContaining(['Read', '1/1', 'Build', '0/2', 'Ship', '0/1', 'Code', 'Edit', 'Types', 'Test', 'Release', 'tests first']))
     expect(await svgSource($, 'Fold')).toContain('M3 4.5 6 7.5 9 4.5')
-    expect((await texts($)).filter(one => one.startsWith('Bắt đầu '))).toEqual([expect.stringMatching(/ · 1\/4 bước$/)])
+    expect((await texts($)).filter(one => one.startsWith('Started '))).toEqual([expect.stringMatching(/ · 1\/4 steps$/)])
     expect((await texts($)).some(one => one.includes('→'))).toBe(false)
 
     await press($, 'toggle-plan')
@@ -333,7 +333,7 @@ describe('the Progress pane on Desktop', () => {
     await press($, 'toggle-job')
     await clock.advance(5000)
     const all = await texts($)
-    expect(all.filter(text => text.endsWith(' bước'))).toEqual([expect.stringMatching(/ · 3\/3 bước$/)])
+    expect(all.filter(text => text.endsWith(' steps'))).toEqual([expect.stringMatching(/ · 3\/3 steps$/)])
     expect(all.filter(text => text === '●' || text === '○')).toEqual([])
     expect(all.some(text => text.endsWith('…'))).toBe(false)
   })
@@ -352,7 +352,7 @@ describe('the Progress pane on Desktop', () => {
       await finish($, id)
       await press($, `toggle-${id}`)
       const all = await texts($)
-      expect(all.filter(text => text.endsWith(' bước'))).toEqual([expect.stringMatching(/ · 3\/3 bước$/)])
+      expect(all.filter(text => text.endsWith(' steps'))).toEqual([expect.stringMatching(/ · 3\/3 steps$/)])
       expect(all.filter(text => ['●', '○', '!'].includes(text))).toEqual([])
       await press($, `toggle-${id}`)
     }
@@ -383,7 +383,7 @@ describe('the Progress pane on Desktop', () => {
     expect(await texts($)).toEqual(expect.arrayContaining(['Agents', '1 running', 'Scout', 'Starting', '3s']))
 
     await finishAgent($, 'use-1')
-    expect(await texts($)).toEqual(expect.arrayContaining([expect.stringMatching(/^Bắt đầu \d\d:\d\d · 0\/2 bước$/), '1 done', 'Done']))
+    expect(await texts($)).toEqual(expect.arrayContaining([expect.stringMatching(/^Started \d\d:\d\d · 0\/2 steps$/), '1 done', 'Done']))
   })
 
   test('Hide in the details hides one bar, and the pane stays up after the last one', async ($, on) => {
@@ -412,7 +412,7 @@ describe('the Progress pane on Desktop', () => {
 
     await press($, 'older')
     expect(await rows($)).toEqual(['second', 'first'])
-    expect((await buttons($))['close-first']).toBe('Hiện lại')
+    expect((await buttons($))['close-first']).toBe('Show again')
 
     await press($, 'close-first')
     expect((await rows($)).sort()).toEqual(['first', 'second'])
@@ -794,7 +794,7 @@ describe('what a row says', () => {
     await press($, 'toggle-finished')
     const all = await texts($)
 
-    expect(all.some(one => /^Bắt đầu \d\d:\d\d · xong \d\d:\d\d · 2\/2 bước$/.test(one))).toBe(true)
+    expect(all.some(one => /^Started \d\d:\d\d · done \d\d:\d\d · 2\/2 steps$/.test(one))).toBe(true)
     expect(all.some(one => one.startsWith('Done at '))).toBe(false)
   })
 

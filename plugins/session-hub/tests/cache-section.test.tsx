@@ -211,7 +211,7 @@ describe('the Cache section of Mod status', () => {
 
     await request($, w, 't1', { read: 1000, write: 500, fresh: 0 })
     const warm = await texts($)
-    expect(['Cache warm · ~5m', '5m left', '~1.5k giữ lại'].filter(one => !warm.includes(one))).toEqual([])
+    expect(['Cache warm · ~5m', '5m left', '~1.5k cached'].filter(one => !warm.includes(one))).toEqual([])
     expect(warm.some(line => line.startsWith('Expires '))).toBe(true)
 
     await w.clock.advance(4 * 60_000 + 30_000)
