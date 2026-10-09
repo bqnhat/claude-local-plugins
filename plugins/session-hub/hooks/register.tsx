@@ -559,6 +559,33 @@ function agentCounts(agents: readonly AgentRun[]): string {
 }
 
 const STEP_GLYPH: Record<StepStatus, string> = { done: '✓', active: '●', pending: '○', error: '!', skipped: '–' }
+const STAGE_NODE = 14
+const STATE_CHIP: Record<PlanState, string> = { running: 'Running', needs_input: 'Waiting', error: 'Failed', done: 'Done' }
+
+type StageState = 'done' | 'error' | 'active' | 'pending'
+const STAGE_WORD: Record<StageState, string> = { done: 'done', error: 'failed', active: 'in progress', pending: 'not started' }
+
+function stageStateOf(s: PlanStage): StageState {
+  if (s.steps.some(step => step.status === 'error')) return 'error'
+  if (s.steps.every(step => isFinished(step.status))) return 'done'
+  return s.steps.some(step => step.status !== 'pending') ? 'active' : 'pending'
+}
+
+function stageNodeSvg(state: StageState, live: string): string {
+  const n = STAGE_NODE
+  const c = n / 2
+  const halo = (color: string) => `<circle cx="${c}" cy="${c}" r="${c}" fill="${color}" fill-opacity=".18"/>`
+  const stroke = (color: string, d: string) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`
+  const inner =
+    state === 'done'
+      ? halo(STATE_COLOR.done) + stroke(STATE_COLOR.done, 'M4.2 7.2 6.2 9.2 9.9 5.2')
+      : state === 'error'
+        ? halo(STATE_COLOR.error) + stroke(STATE_COLOR.error, 'M7 3.8v3.6') + `<circle cx="7" cy="10.1" r=".95" fill="${STATE_COLOR.error}"/>`
+        : state === 'active'
+          ? halo(live) + `<circle cx="${c}" cy="${c}" r="2.6" fill="${live}"/>`
+          : `<circle cx="${c}" cy="${c}" r="${c - 0.8}" fill="none" stroke="${QUIET}" stroke-opacity=".5" stroke-width="1.2"/>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 ${n} ${n}">${inner}</svg>`
+}
 
 // ---------- engine glue ----------
 
@@ -1198,10 +1225,21 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     </Box>
   )
 
-  const stepRow = (item: Timed, key: string, depth: number, tint: string, times: Times) => {
+  const stepRow = (item: Timed, key: string, depth: number, tint: string, times: Times, isTimeline = false) => {
     const isLive = item.status === 'active' || item.status === 'error'
     const took = shownTime(times.items.get(item) ?? '', now)
-    const glyph = item.status === 'pending' ? <Text dimColor>{STEP_GLYPH.pending}</Text> : <Text color={ink(stepColor(item.status, tint))}>{STEP_GLYPH[item.status]}</Text>
+    const mark = STEP_GLYPH[item.status]
+    const glyph = item.status === 'pending' ? <Text dimColor>{mark}</Text> : <Text color={ink(stepColor(item.status, tint))}>{mark}</Text>
+    const title =
+      isTimeline && item.status === 'error' ? (
+        <Text bold color={ink(STATE_COLOR.error)} wrap="truncate">
+          {item.title}
+        </Text>
+      ) : (
+        <Text bold={isLive} dimColor={!isLive} wrap="truncate">
+          {item.title}
+        </Text>
+      )
 
     return (
       <Box key={key} flexDirection="row" gap={1} marginLeft={depth * 2} minWidth={0}>
@@ -1209,9 +1247,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
           {glyph}
         </Box>
         <Box flexGrow={1} minWidth={0}>
-          <Text bold={isLive} dimColor={!isLive} wrap="truncate">
-            {item.title}
-          </Text>
+          {title}
         </Box>
         {took ? [<Text key={`${key}-time`} dimColor>{took}</Text>] : []}
       </Box>
@@ -1254,7 +1290,14 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
 
     return (
       <Box key={`detail-${p.id}`} flexDirection="column" marginLeft={DETAIL_INDENT} marginRight={1} marginBottom={1} minWidth={0}>
-        <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" minWidth={0}>
+        <Box key={`meta-${p.id}`} flexDirection="row" alignItems="center" columnGap={1} minWidth={0}>
+          {Svg && p.id !== AGENTS
+            ? [
+                <Box key={`chip-${p.id}`} paddingX={1} flexShrink={0} backgroundColor={tint(color)}>
+                  <Text color={ink(color)}>{STATE_CHIP[p.state]}</Text>
+                </Box>,
+              ]
+            : []}
           <Box flexGrow={1} minWidth={0}>
             <Text dimColor wrap="truncate">{`Started ${clockTime(p.startedAt)}${p.state === 'done' ? ` · done ${clockTime(touchedAt(p))}` : ''}${took ? ` · ${took}` : ''}`}</Text>
           </Box>
@@ -1282,7 +1325,42 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
           : []}
         {p.id === AGENTS
           ? []
-          : p.stages.flatMap((s, i) => {
+          : Svg && !isSingle
+            ? p.stages.map((s, i) => {
+                const finished = s.steps.filter(step => isFinished(step.status)).length
+                const stageTime = shownTime(times.stages[i] ?? '', now)
+                const state = stageStateOf(s)
+                const isLast = i === p.stages.length - 1
+                return (
+                  <Box key={`stage-block-${p.id}-${i}`} flexDirection="row" alignItems="stretch" columnGap={1} marginTop={i === 0 ? 1 : 0} minWidth={0}>
+                    <Box key={`stage-rail-${p.id}-${i}`} flexDirection="column" alignItems="center" width={2} flexShrink={0}>
+                      <Svg source={stageNodeSvg(state, color)} alt={`${s.name}: ${STAGE_WORD[state]}`} width={STAGE_NODE} height={STAGE_NODE} />
+                      {isLast ? [] : [<Box key={`stage-line-${p.id}-${i}`} flexGrow={1} width={0.1} backgroundColor={DIVIDER} />]}
+                    </Box>
+                    <Box key={`stage-body-${p.id}-${i}`} flexDirection="column" flexGrow={1} minWidth={0} paddingBottom={isLast ? 0 : 1}>
+                      <Box key={`stage-${p.id}-${i}`} flexDirection="row" minWidth={0}>
+                        <Box flexGrow={1} minWidth={0}>
+                          {state === 'error' ? (
+                            <Text bold color={ink(STATE_COLOR.error)} wrap="truncate">
+                              {s.name}
+                            </Text>
+                          ) : (
+                            <Text bold wrap="truncate">
+                              {s.name}
+                            </Text>
+                          )}
+                        </Box>
+                        <Text dimColor>{`${finished}/${s.steps.length}${stageTime ? ` · ${stageTime}` : ''}`}</Text>
+                      </Box>
+                      {s.steps.flatMap((step, j) => [
+                        stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times, true),
+                        ...step.substeps.map((sub, k) => stepRow(sub, `sub-${p.id}-${i}-${j}-${k}`, 1, color, times, true)),
+                      ])}
+                    </Box>
+                  </Box>
+                )
+              })
+            : p.stages.flatMap((s, i) => {
               const finished = s.steps.filter(step => isFinished(step.status)).length
               const stageTime = shownTime(times.stages[i] ?? '', now)
               const head = isSingle
