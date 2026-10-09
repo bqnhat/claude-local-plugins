@@ -4,7 +4,7 @@ import type { Engine, MockClock } from 'claude-code/testing'
 
 const TOOL = 'mcp__session-hub__plan_progress'
 const PLUGIN = 'session-hub'
-const PANE_PROPS = { title: 'Mod status', isFocused: false, bodyColumns: 60, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 30 }, view: {} }
+const BAND_PROPS = { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 60, scroll: { offset: 0, bodyRows: 12 }, view: {} }
 
 type World = { clock: MockClock; listed: AgentInfo[]; sentBack: string[] }
 
@@ -37,7 +37,7 @@ const flat = (node: unknown): string =>
   typeof node === 'string' ? node : Array.isArray(node) ? node.map(flat).join('') : node !== null && typeof node === 'object' ? flat((node as { children?: unknown }).children ?? []) : ''
 
 async function texts($: Engine): Promise<string[]> {
-  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'Pane', requestId: PLUGIN, props: PANE_PROPS })
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const all = (await ui.findAll({ type: 'Text' })).map(flat)
   await ui.unmount()
   return all
@@ -59,13 +59,6 @@ const ended = ($: Engine, useId: string, reason: 'answer' | 'aborted' | 'error' 
 
 const listed = (id: string, status: string): AgentInfo => ({ id, description: id, type: 'Explore', status })
 
-async function details($: Engine): Promise<string[]> {
-  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'Pane', requestId: PLUGIN, props: PANE_PROPS })
-  await ui.press({ key: 'toggle-agents:auto' })
-  await ui.unmount()
-  return texts($)
-}
-
 describe('agents that end without their own turn end', () => {
   test('an agent the engine lists as killed stops on the Agents bar while the others keep running', async ($, on) => {
     const w = world(on)
@@ -76,7 +69,7 @@ describe('agents that end without their own turn end', () => {
     w.listed = [listed('agent-a', 'killed'), listed('agent-b', 'running')]
     await w.clock.advance(5000)
 
-    expect(await details($)).toEqual(expect.arrayContaining(['Stopped', '1 running · 1 failed', expect.stringMatching(/^Started \d\d:\d\d · 0\/2 agents done$/)]))
+    expect(await texts($)).toEqual(expect.arrayContaining([expect.stringContaining('Agents 1/2')]))
   })
 
   test('the last agent the engine lists as completed finishes the Agents bar', async ($, on) => {
@@ -84,10 +77,11 @@ describe('agents that end without their own turn end', () => {
     await $.session.start({ cwd: '/work' } as never)
     await w.clock.advance(1000)
     await spawn($, 'a', 'Scout')
+    expect(await texts($)).toContain('Agents')
     w.listed = [listed('agent-a', 'completed')]
     await w.clock.advance(5000)
 
-    expect(await texts($)).toEqual(expect.arrayContaining(['Done · 1', '1/1 agent done']))
+    expect(await texts($)).toEqual(expect.arrayContaining([expect.stringContaining('Agents 1/1')]))
   })
 
   test('an agent gone from under an open bar no longer holds the bar from being sent back', async ($, on) => {
@@ -114,6 +108,6 @@ describe('agents that end without their own turn end', () => {
     w.listed = [listed('agent-a', 'completed')]
     await w.clock.advance(5000)
 
-    expect(await details($)).toEqual(expect.arrayContaining(['Failed', '1 failed']))
+    expect(await texts($)).toEqual(expect.arrayContaining(['!', expect.stringContaining('Agents 1/1')]))
   })
 })

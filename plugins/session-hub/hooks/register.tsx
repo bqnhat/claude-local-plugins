@@ -1253,7 +1253,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
   const Svg = e.surface === 'desktop' && 'Svg' in t ? t.Svg : null
   await read($, tick)
   const now = await $.clock.now()
-  const kept = await read($, plans)
+  const kept = (await read($, plans)).filter(p => p.id !== AGENTS)
   const all = kept.filter(p => !p.hidden)
   const opened = await read($, expandedIds)
   const isOlderShown = await read($, isHistoryOpen)

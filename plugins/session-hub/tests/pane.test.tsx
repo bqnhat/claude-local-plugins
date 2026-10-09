@@ -638,7 +638,7 @@ describe('when the Progress pane opens and closes', () => {
     expect([...w.panes]).toEqual([])
   })
 
-  test('the first agent opens a pane closed on another section on Progress, where its bar is', async ($, on) => {
+  test('the first agent opens a pane closed on another section on Progress, which holds no Agents bar', async ($, on) => {
     const w = world(on)
     const session = () => $.command.run({ command: 'session', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false } as never })
     await session()
@@ -649,7 +649,7 @@ describe('when the Progress pane opens and closes', () => {
     await spawn($, 'use-1', 'Scout')
     expect([...w.panes]).toEqual([PANE])
     expect(await title($)).toBe('Progress')
-    expect(await rows($)).toEqual(['agents:auto'])
+    expect(await rows($)).toEqual([])
   })
 
   test('Progress opens the pane again when it went away while the bars were showing', async ($, on) => {
@@ -798,17 +798,13 @@ describe('what a row says', () => {
     expect(all.some(one => one.startsWith('Done at '))).toBe(false)
   })
 
-  test('the Agents row counts its agents, and its details list them', async ($, on) => {
+  test('the Progress pane leaves the Agents bar out, its agents stay in the band above the prompt', async ($, on) => {
     const { clock } = world(on)
     await clock.advance(1000)
     await spawn($, 'use-1', 'Scout')
-    expect(await texts($)).toContain('0/1 agent done')
-
     await finishAgent($, 'use-1')
     await clock.advance(6000)
-    await press($, 'toggle-agents:auto')
-    expect(await texts($)).toEqual(expect.arrayContaining(['Scout', 'Done', '1 done']))
-    expect(await svgSource($, 'Agents: ')).toBeUndefined()
+    expect(await texts($)).toContain('No progress bars yet. One appears when Claude starts a task with several steps.')
   })
 
   test('the ring draws the finished share of its circle', async ($, on) => {
