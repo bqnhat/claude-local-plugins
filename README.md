@@ -35,7 +35,7 @@ Start a new session afterwards. To pick up a newer version, run `claude plugin m
 - **Footer entry.** Shows `Mods` when idle, `Progress N` while plan bars are open, `Agents N` while subagents run, `💡 N` when suggestions are ready, joined by `·` when more than one applies. Clicking it opens or closes the Mod status pane. Next to it, `⏱ mm:ss` counts down until the prompt cache goes cold, from the moment the last main-loop request was sent. It turns orange near the end. Clicking it opens the Cache section.
 - **Icon rail.** The pane has one icon per section: Progress, Next steps, Skills & agents and Cache. A click anywhere on a bar or row opens or collapses it.
 - **Progress section.** The model gets a `plan_progress` tool (`mcp__session-hub__plan_progress`) and a short rule with the first prompt. Larger tasks get a bar of stages and steps, with step times and soft sounds for "needs a decision", "error" and "done". If the model starts a fourth file edit or changing shell command in a turn without a bar, that call is refused once and the model is told to create one. A plan accepted from plan mode becomes a bar, and subagents started outside a plan get an automatic Agents bar. Finished bars stay in a history list.
-- **Next steps section.** After each answer, the plugin forks the session and asks for up to three next prompts, one per kind: `✓` verify (or `⚖` decide), `🔍` dig, `→` advance. Clicking one puts its prompt in the composer as a draft. The plugin never sends a prompt on its own. An optional critic model scores the suggestions and drops weak ones. The fork prompt asks for labels in Vietnamese.
+- **Next steps section.** After each answer, the plugin forks the session and asks for up to three next prompts, one per kind: `✓` verify (or `⚖` decide), `🔍` dig, `→` advance. Clicking one puts its prompt in the composer as a draft. The plugin never sends a prompt on its own. The fork prompt asks for labels in Vietnamese.
 - **Skills & agents section.** Lists the skills and agents called this session, grouped by turn and each tagged personal, project, plugin or built-in, and the rule and `CLAUDE.md` files the session loaded.
 - **Cache section.** Built from the main loop's requests in this session; subagent requests are left out. The header shows the cache lifetime, the time left and the turn count, and the last request's read, wrote and new tokens with its hit rate. Two views:
   - **Tokens.** A chart of stacked read, wrote and new tokens per turn with a hit-rate line (green at 80% or more, orange at 40% or more, red below), session totals, and a table of the last 12 turns. Each turn's tokens add up every request in it, so a turn with many tool calls re-reads the whole context many times.
@@ -61,7 +61,6 @@ The same progress bars and suggestions are drawn as bands above the prompt, and 
 | --- | --- | --- |
 | `minAnswerChars` | `80` | Skip suggestions after answers shorter than this many characters |
 | `suggestSkills` | `true` | Tell the suggester which skills and slash commands the session has |
-| `critic` | `opus` | Model that scores the suggestions: `off`, `haiku` or `opus` |
 | `ttlMinutes` | `0` | Fix the cache lifetime (`60` or `5`); `0` learns it from the responses |
 | `warnMinutes` | `1` | Minutes before expiry when the countdown turns orange |
 
