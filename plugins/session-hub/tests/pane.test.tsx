@@ -807,6 +807,29 @@ describe('what a row says', () => {
     expect(await texts($)).toContain('No progress bars yet. One appears when Claude starts a task with several steps.')
   })
 
+  test('an open bar draws its title large and hangs its stages and steps on a two-level tree', async ($, on) => {
+    world(on)
+    await $.tool.call({
+      tool: TOOL,
+      id: 'plan',
+      title: 'Pin the cache bar',
+      stages: [
+        { name: 'Read', steps: [{ title: 'Scroll model', status: 'done' }] },
+        { name: 'Edit', steps: [{ title: 'Pin footer', status: 'active' }, { title: 'Test', status: 'pending' }] },
+      ],
+    })
+    await press($, 'toggle-plan')
+    const ui = await pane($)
+    const keys = (await ui.findAll({ type: 'Box' })).map(box => box.key ?? '')
+    const big = (await ui.findAll({ type: 'Svg' })).find(one => one.props.alt === 'Pin the cache bar')
+    await ui.unmount()
+    expect(String(big?.props.source)).toContain('font-size="20"')
+    expect(keys.filter(key => key.startsWith('stage-guide-plan-'))).toHaveLength(2)
+    expect(keys.filter(key => key.startsWith('step-guide-plan-'))).toHaveLength(2)
+    expect(keys.filter(key => /^stage-elbow-plan-\d+$/.test(key))).toHaveLength(2)
+    expect(keys.filter(key => /^step-plan-\d+-\d+-elbow$/.test(key))).toHaveLength(3)
+  })
+
   test('the ring draws the finished share of its circle', async ($, on) => {
     world(on)
     await create($, 'task')

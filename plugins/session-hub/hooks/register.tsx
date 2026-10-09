@@ -513,6 +513,31 @@ function titleSvg(text: string): { source: string; width: number } {
   }
 }
 
+const PLAN_TITLE_SIZE = 20
+const PLAN_TITLE_LINE = 26
+const PLAN_TITLE_LINES = 2
+
+function clipLine(text: string, size: number, room: number): string {
+  if (textWidth(text, size) <= room) return text
+  const chars = [...text]
+  while (chars.length > 1 && textWidth(`${chars.join('')}…`, size) > room) chars.pop()
+  return `${chars.join('').trimEnd()}…`
+}
+
+const PLAN_TITLE_SAFETY = 1.12
+
+function planTitleSvg(text: string, room: number, isQuiet: boolean): { source: string; width: number; height: number } {
+  const guess = PLAN_TITLE_SIZE * PLAN_TITLE_SAFETY
+  const wrapped = wrapWords(text, guess, room)
+  const lines = wrapped.length <= PLAN_TITLE_LINES ? wrapped : [...wrapped.slice(0, PLAN_TITLE_LINES - 1), wrapped.slice(PLAN_TITLE_LINES - 1).join(' ')]
+  const shown = lines.map(line => clipLine(line, guess, room))
+  const width = Math.ceil(Math.max(...shown.map(line => textWidth(line, guess))) + 4)
+  const height = shown.length * PLAN_TITLE_LINE
+  const look = isQuiet ? 'font-weight="400" class="soft"' : 'font-weight="500" class="ink"'
+  const rows = shown.map((line, i) => `<text x="0" y="${i * PLAN_TITLE_LINE + 20}" ${SVG_FONT} font-size="${PLAN_TITLE_SIZE}" ${look}>${xmlText(line)}</text>`).join('')
+  return { source: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${inkStyle}${rows}</svg>`, width, height }
+}
+
 function planRingSvg(p: Plan, pct: number): string {
   const r = (PLAN_RING - 6) / 2
   const c = 2 * Math.PI * r
@@ -1281,7 +1306,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     </Box>
   )
 
-  const stepRow = (item: Timed, key: string, depth: number, tint: string, times: Times, isTimeline = false) => {
+  const stepRow = (item: Timed, key: string, depth: number, tint: string, times: Times, isTimeline = false, isTree = false) => {
     const isLive = item.status === 'active' || item.status === 'error'
     const took = shownTime(times.items.get(item) ?? '', now)
     const mark = STEP_GLYPH[item.status]
@@ -1309,11 +1334,24 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
       </Text>
     )
 
-    return (
-      <Box key={key} flexDirection="row" gap={isTimeline ? 0.75 : 1} marginLeft={depth * 2} minWidth={0}>
-        <Box key={`${key}-mark`} width={isTimeline ? 0.75 : 1} flexShrink={0} justifyContent="center" alignItems="center">
-          {glyph}
+    const markBox = (
+      <Box key={`${key}-mark`} width={isTimeline ? 0.75 : 1} flexShrink={0} justifyContent="center" alignItems="center">
+        {glyph}
+      </Box>
+    )
+    const lead =
+      isTree && Svg && depth === 0 ? (
+        <Box key={`${key}-lead`} flexDirection="row" alignItems="center" flexShrink={0}>
+          <Box key={`${key}-elbow`} width={STEP_ELBOW} height={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
+          {markBox}
         </Box>
+      ) : (
+        markBox
+      )
+
+    return (
+      <Box key={key} flexDirection="row" gap={isTimeline ? 0.75 : 1} marginLeft={isTree && Svg && depth > 0 ? STEP_ELBOW + depth * 2 : depth * 2} minWidth={0}>
+        {lead}
         <Box flexGrow={1} minWidth={0}>
           {title}
         </Box>
@@ -1422,27 +1460,36 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
                 const state = stageStateOf(s)
                 const isLast = i === p.stages.length - 1
                 return (
-                  <Box key={`stage-block-${p.id}-${i}`} flexDirection="row" alignItems="stretch" columnGap={1} marginTop={i === 0 ? 1 : 0} minWidth={0}>
-                    <Box key={`stage-rail-${p.id}-${i}`} flexDirection="column" alignItems="center" width={2} flexShrink={0}>
-                      <Box key={`stage-stub-${p.id}-${i}`} height={0.25} width={0.15} {...(i === 0 ? {} : { backgroundColor: TIMELINE_LINE })} />
-                      <Svg source={stageNodeSvg(state, color)} alt={`${s.name}: ${STAGE_WORD[state]}`} width={STAGE_NODE} height={STAGE_NODE} />
-                      <Box key={`stage-line-${p.id}-${i}`} flexGrow={1} width={0.15} marginBottom={isLast && s.steps.length > 0 ? 1.2 : 0} backgroundColor={TIMELINE_LINE} />
-                    </Box>
-                    <Box key={`stage-body-${p.id}-${i}`} flexDirection="column" flexGrow={1} minWidth={0} paddingBottom={isLast ? 0 : 1}>
-                      <Box key={`stage-${p.id}-${i}`} flexDirection="row" columnGap={1} minWidth={0}>
-                        <Box flexGrow={1} minWidth={0}>
+                  <Box key={`stage-block-${p.id}-${i}`} flexDirection="row" alignItems="stretch" marginLeft={TREE_OFFSET} marginTop={i === 0 ? 1 : 0} minWidth={0}>
+                    <Box key={`stage-guide-${p.id}-${i}`} width={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
+                    <Box key={`stage-body-${p.id}-${i}`} flexDirection="column" flexGrow={1} minWidth={0} paddingBottom={isLast ? 0 : 0.75}>
+                      <Box key={`stage-${p.id}-${i}`} flexDirection="row" alignItems="center" minWidth={0}>
+                        <Box key={`stage-elbow-${p.id}-${i}`} width={STAGE_ELBOW} height={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
+                        <Box key={`stage-node-${p.id}-${i}`} flexShrink={0}>
+                          <Svg source={stageNodeSvg(state, color)} alt={`${s.name}: ${STAGE_WORD[state]}`} width={STAGE_NODE} height={STAGE_NODE} />
+                        </Box>
+                        <Box flexGrow={1} minWidth={0} paddingLeft={0.75}>
                           <Text bold wrap="truncate">
                             {s.name}
                           </Text>
                         </Box>
-                        <Box flexShrink={0}>
+                        <Box flexShrink={0} paddingLeft={0.75}>
                           <Text dimColor>{stageTime || `${finished}/${s.steps.length}`}</Text>
                         </Box>
                       </Box>
-                      {s.steps.flatMap((step, j) => [
-                        stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times, true),
-                        ...step.substeps.map((sub, k) => stepRow(sub, `sub-${p.id}-${i}-${j}-${k}`, 1, color, times, true)),
-                      ])}
+                      {s.steps.length > 0
+                        ? [
+                            <Box key={`step-tree-${p.id}-${i}`} flexDirection="row" alignItems="stretch" marginLeft={STEP_TREE_INDENT} minWidth={0}>
+                              <Box key={`step-guide-${p.id}-${i}`} width={TREE_LINE} flexShrink={0} backgroundColor={TIMELINE_LINE} />
+                              <Box key={`step-list-${p.id}-${i}`} flexDirection="column" flexGrow={1} minWidth={0}>
+                                {s.steps.flatMap((step, j) => [
+                                  stepRow(step, `step-${p.id}-${i}-${j}`, 0, color, times, true, true),
+                                  ...step.substeps.map((sub, k) => stepRow(sub, `sub-${p.id}-${i}-${j}-${k}`, 1, color, times, true, true)),
+                                ])}
+                              </Box>
+                            </Box>,
+                          ]
+                        : []}
                     </Box>
                   </Box>
                 )
@@ -1488,6 +1535,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
     const mark = isCompact || !Svg ? <Text color={ink(color)}>{STATE_GLYPH[p.state]}</Text> : <Svg source={planIconSvg(p, pct)} alt={`${p.title} ${pct}% · ${STATE_WORD[p.state]}`} width={PLAN_RING} height={PLAN_RING} />
     const isQuiet = p.state === 'done' || p.hidden === true
     const right = isCompact ? clockTime(touchedAt(p)) : took
+    const bigTitle = Svg !== null && isWide && !isCompact ? planTitleSvg(p.title, Math.max(96, Math.floor(columns * CELL_PX) - TITLE_RESERVE), isQuiet) : null
     const line = isAlert ? (
       <Text key={`line-${p.id}`} color={ink(color)} wrap="truncate">
         {overview(p, w)}
@@ -1505,9 +1553,15 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
           <Box key={`top-${p.id}`} flexDirection="row" alignItems="center" gap={1} minWidth={0}>
             <Box flexGrow={1} minWidth={0}>
               {isDesktop ? (
-                <Text key={`title-${p.id}`} bold={Svg !== null && !isQuiet && !isCompact} dimColor={isQuiet} wrap="truncate">
-                  {p.title}
-                </Text>
+                bigTitle && Svg ? (
+                  <Box key={`title-${p.id}`}>
+                    <Svg source={bigTitle.source} alt={p.title} width={bigTitle.width} height={bigTitle.height} />
+                  </Box>
+                ) : (
+                  <Text key={`title-${p.id}`} bold={Svg !== null && !isQuiet && !isCompact} dimColor={isQuiet} wrap="truncate">
+                    {p.title}
+                  </Text>
+                )
               ) : (
                 <Button key={`toggle-${p.id}`} plain dimColor={p.state === 'done'} label={p.title} onPress={toggle} />
               )}
@@ -2601,6 +2655,12 @@ const inkStyle = themeStyle(`.ink{fill:${INK.light}}.soft{fill:${SOFT_INK.light}
 const FOOTER_TRACK_STYLE = themeStyle('.track{fill:#FFFFFF}', '.track{fill:#FFFFFF24}')
 const RING_STYLE = themeStyle('.ring{stroke:#FFFFFF}', '.ring{stroke:#262624}')
 const widthOf = (columns: number) => Math.min(STRETCH_W, Math.max(160, Math.floor(columns * CELL_PX)))
+const TREE_LINE = 0.15
+const TREE_OFFSET = 1.5 - TREE_LINE / 2
+const STAGE_ELBOW = 2
+const STEP_ELBOW = 2.5
+const STEP_TREE_INDENT = STAGE_ELBOW + STAGE_NODE / CELL_PX / 2 - TREE_LINE / 2
+const TITLE_RESERVE = 120
 
 function clockIconSvg(color: string): string {
   const n = CLOCK_ICON

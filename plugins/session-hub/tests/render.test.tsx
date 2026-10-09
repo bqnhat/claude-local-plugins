@@ -41,7 +41,7 @@ async function stepLine($: Engine, key: string): Promise<string> {
   const walk = (node: unknown): void => {
     if (node === null || typeof node !== 'object') return
     const one = node as { type?: unknown; children?: unknown }
-    if (one.type === 'Text' || one.type === 'Svg') texts.push(one)
+    if (one.type === 'Text' || (one.type === 'Svg' && !key.startsWith('stage-'))) texts.push(one)
     else if (Array.isArray(one.children)) one.children.forEach(walk)
   }
   walk(row)
