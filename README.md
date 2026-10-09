@@ -60,6 +60,7 @@ The same progress bars and suggestions are drawn as bands above the prompt, and 
 | Option | Default | What it does |
 | --- | --- | --- |
 | `minAnswerChars` | `80` | Skip suggestions after answers shorter than this many characters |
+| `nextStepsModel` | (empty) | Model for next steps. Empty forks the session with its own model; a name such as `claude-haiku-5-5` sends the recent conversation to that model |
 | `suggestSkills` | `true` | Tell the suggester which skills and slash commands the session has |
 | `ttlMinutes` | `0` | Fix the cache lifetime (`60` or `5`); `0` learns it from the responses |
 | `warnMinutes` | `1` | Minutes before expiry when the countdown turns orange |
