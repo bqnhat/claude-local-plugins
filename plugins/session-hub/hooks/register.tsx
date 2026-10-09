@@ -1288,7 +1288,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
           {item.title}
         </Text>
       ) : (
-        <Text bold={item.status === 'active'} dimColor={item.status === 'pending' || item.status === 'skipped'} strikethrough={item.status === 'skipped'} wrap="truncate">
+        <Text dimColor={item.status !== 'active'} strikethrough={item.status === 'skipped'} wrap="truncate">
           {item.title}
         </Text>
       )
@@ -1418,7 +1418,7 @@ async function progressSection($: EngineInterface, e: RenderInputOf<'Pane'>): Pr
                           <Svg source={stageNodeSvg(state, color)} alt={`${s.name}: ${STAGE_WORD[state]}`} width={STAGE_NODE} height={STAGE_NODE} />
                         </Box>
                         <Box flexGrow={1} minWidth={0} paddingLeft={0.75}>
-                          <Text bold wrap="truncate">
+                          <Text wrap="truncate">
                             {s.name}
                           </Text>
                         </Box>
