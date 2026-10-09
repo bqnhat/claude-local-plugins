@@ -2169,6 +2169,10 @@ function nextStepsBand($: EngineInterface, e: RenderInputOf<'AbovePrompt'>, belo
 }
 
 const CARD_INSET = 3
+const CARD_BG = '#80808014'
+const KIND_COLOR: Record<SuggestionKind, string> = { verify: GREEN, dig: '#3E8ED0', advance: ORANGE, decide: PURPLE }
+const CARD_GLYPH: Record<SuggestionKind, string> = { verify: '✓', dig: '⌕', advance: '→', decide: '⇄' }
+const GOAL_PREFIX = 'Mục tiêu: '
 
 async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): Promise<RenderElement> {
   const t = $.ui.resolve(e)
@@ -2188,7 +2192,7 @@ async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): P
       ? []
       : [
           <Text key="next-goal" dimColor wrap="truncate">
-            {`🎯 ${shown.goal}`}
+            {isDesktop ? `${GOAL_PREFIX}${shown.goal}` : `🎯 ${shown.goal}`}
           </Text>,
         ]
   const opened = await read($, openDetail)
@@ -2220,23 +2224,61 @@ async function nextStepsSection($: EngineInterface, e: RenderInputOf<'Pane'>): P
   }
   if (isDesktop) {
     const cardFill = ROW_FILL_CHAR.repeat(Math.max(1, Math.floor((columns - CARD_INSET) * ROW_FILL_PER_COLUMN)))
+    const cardDetail = (item: Suggestion, index: number): RenderElement[] => {
+      if (item.detail === undefined || opened !== index) return []
+      return [
+        <Box key={`next-step-detail-rule-${index + 1}`} height={0.1} marginTop={1} backgroundColor={DIVIDER} />,
+        <Box key={`next-step-detail-body-${index + 1}`} flexDirection="column" paddingTop={1} minWidth={0}>
+          <Text bold wrap="wrap">
+            {item.detail.title}
+          </Text>
+          {item.detail.points.map((point, at) => (
+            <Text key={`next-step-point-${index + 1}-${at + 1}`} dimColor wrap="wrap">
+              {`• ${point}`}
+            </Text>
+          ))}
+        </Box>,
+      ]
+    }
+    const cardFooter = (item: Suggestion, index: number): RenderElement => {
+      const isOpen = opened === index
+      return (
+        <Box key={`next-step-foot-${index + 1}`} flexDirection="row" justifyContent="space-between" marginTop={1} minWidth={0}>
+          {item.detail === undefined ? (
+            <Box key={`next-step-detail-none-${index + 1}`} />
+          ) : (
+            <Button
+              key={`next-step-detail-${index + 1}`}
+              plain
+              label={isOpen ? '▾ Ẩn chi tiết' : '▸ Chi tiết'}
+              onPress={() => void update($, openDetail, () => (isOpen ? -1 : index)).catch(() => undefined)}
+            />
+          )}
+          <Button key={`next-step-fill-${index + 1}`} plain label="Điền ↵" onPress={() => fillDraft($, item.prompt)} />
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column" gap={1} paddingX={1} minWidth={0}>
         {goalLine}
         {shown.items.map((item, index) => (
-          <Box key={`next-step-item-${index + 1}`} flexDirection="column" minWidth={0}>
-            <Box key={`next-step-row-${index + 1}`} position="relative" flexDirection="column" borderStyle="round" minWidth={0}>
-              <Text key={`next-step-label-${index + 1}`} bold wrap="truncate">
-                {fitLabel(kindLabel(item), room)}
-              </Text>
-              <Text key={`next-step-why-${index + 1}`} dimColor wrap="wrap">
-                {item.why}
-              </Text>
-              <Box key={`next-step-hit-${index + 1}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
-                <Button key={`next-step-${index + 1}`} plain label={cardFill} onPress={() => fillDraft($, item.prompt)} />
+          <Box key={`next-step-row-${index + 1}`} flexDirection="row" alignItems="stretch" backgroundColor={CARD_BG} minWidth={0}>
+            <Box key={`next-step-accent-${index + 1}`} width={0.25} backgroundColor={KIND_COLOR[item.kind]} />
+            <Box key={`next-step-body-${index + 1}`} flexDirection="column" flexGrow={1} paddingX={1} paddingY={1} minWidth={0}>
+              <Box key={`next-step-head-${index + 1}`} position="relative" flexDirection="column" minWidth={0}>
+                <Text key={`next-step-label-${index + 1}`} bold wrap="truncate">
+                  {fitLabel(`${CARD_GLYPH[item.kind]} ${item.label}`, room)}
+                </Text>
+                <Text key={`next-step-why-${index + 1}`} dimColor wrap="wrap">
+                  {item.why}
+                </Text>
+                <Box key={`next-step-hit-${index + 1}`} position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="row" alignItems="stretch" overflow="hidden">
+                  <Button key={`next-step-${index + 1}`} plain label={cardFill} onPress={() => fillDraft($, item.prompt)} />
+                </Box>
               </Box>
+              {cardFooter(item, index)}
+              {cardDetail(item, index)}
             </Box>
-            {detailOf(item, index)}
           </Box>
         ))}
       </Box>

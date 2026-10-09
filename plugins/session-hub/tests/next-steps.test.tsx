@@ -221,7 +221,7 @@ const footer = ($: Engine, surface: 'desktop' | 'terminal' = 'desktop') =>
 type Drawn = { findAll: (q: { type: 'Text' | 'Button' }) => Promise<{ key?: string; text?: string; props: Record<string, unknown> }[]> }
 
 async function rowTexts(ui: Drawn) {
-  return (await ui.findAll({ type: 'Text' })).slice(2).filter(t => !String(t.text).startsWith('🎯 '))
+  return (await ui.findAll({ type: 'Text' })).slice(2).filter(t => !String(t.text).startsWith('Mục tiêu: '))
 }
 
 async function labels(ui: Drawn): Promise<string[]> {
@@ -233,7 +233,7 @@ async function whys(ui: Drawn): Promise<string[]> {
 }
 
 async function goalLine(ui: Drawn): Promise<string | undefined> {
-  const found = (await ui.findAll({ type: 'Text' })).find(t => String(t.text).startsWith('🎯 '))
+  const found = (await ui.findAll({ type: 'Text' })).find(t => String(t.text).startsWith('Mục tiêu: '))
   return found === undefined ? undefined : String(found.text)
 }
 
@@ -443,7 +443,7 @@ describe('desktop renderer', () => {
     expect(await ui.find({ type: 'Text', text: 'No suggestions right now.' })).toBeDefined()
   })
 
-  test('the pane shows each suggestion as a bordered card: its kind and label over its why; a press fills the draft and keeps the list', async ($, on) => {
+  test('the pane shows each suggestion as a card with an accent bar in the colour of its kind: its kind and label over its why; a press fills the draft and keeps the list', async ($, on) => {
     const w = world(on)
     await completeTurn($, w)
     const ui = await pane($)
@@ -451,8 +451,10 @@ describe('desktop renderer', () => {
     const buttons = await stepButtons(ui)
     expect(buttons.map(b => b.key)).toEqual(['next-step-1', 'next-step-2', 'next-step-3'])
     expect(buttons.every(b => b.props.hotkey === undefined && b.props.label === ' '.repeat(129))).toBe(true)
-    expect((await ui.find({ type: 'Box', key: 'next-step-row-1' }))?.props).toMatchObject({ borderStyle: 'round', position: 'relative' })
-    expect(await labels(ui)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
+    expect((await ui.find({ type: 'Box', key: 'next-step-row-1' }))?.props).toMatchObject({ flexDirection: 'row', backgroundColor: '#80808014' })
+    expect((await ui.find({ type: 'Box', key: 'next-step-accent-2' }))?.props).toMatchObject({ backgroundColor: '#3E8ED0' })
+    expect((await ui.find({ type: 'Box', key: 'next-step-head-1' }))?.props).toMatchObject({ position: 'relative' })
+    expect(await labels(ui)).toEqual(['✓ Run the tests', '⌕ Review it', '→ Settings page'])
     expect((await ui.find({ type: 'Box', key: 'next-step-hit-2' }))?.props).toMatchObject({ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'stretch', overflow: 'hidden' })
     expect((await rowTexts(ui)).filter((_, i) => i % 2 === 1).map(t => [t.text, t.props.wrap])).toEqual([
       ['Why: Run the tests', 'wrap'],
@@ -469,6 +471,24 @@ describe('desktop renderer', () => {
     ])
     expect(w.submitted).toEqual([])
     expect(await stepButtons(ui)).toHaveLength(3)
+  })
+
+  test('each card has its own fill button in the footer that fills that card prompt', async ($, on) => {
+    const w = world(on)
+    await completeTurn($, w)
+    const ui = await pane($)
+
+    const fills = (await ui.findAll({ type: 'Button' })).filter(b => /^next-step-fill-\d+$/.test(b.key ?? ''))
+    expect(fills.map(b => [b.key, b.props.label])).toEqual([
+      ['next-step-fill-1', 'Điền ↵'],
+      ['next-step-fill-2', 'Điền ↵'],
+      ['next-step-fill-3', 'Điền ↵'],
+    ])
+    expect((await ui.find({ type: 'Box', key: 'next-step-foot-1' }))?.props).toMatchObject({ justifyContent: 'space-between' })
+    await ui.press({ key: 'next-step-fill-2' })
+    await w.clock.settle()
+    expect(w.filled).toEqual([{ text: '/code-review high', mode: 'replace' }])
+    expect(w.submitted).toEqual([])
   })
 
   test('the card never shows the prompt, and a press still fills the whole prompt', async ($, on) => {
@@ -677,7 +697,7 @@ describe('suggestion detail', () => {
 
     const toggles = await detailToggles(ui)
     expect(toggles.map(b => [b.key, b.props.label])).toEqual([['next-step-detail-1', '▸ Chi tiết']])
-    expect(await labels(ui)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
+    expect(await labels(ui)).toEqual(['✓ Run the tests', '⌕ Review it', '→ Settings page'])
     await ui.press({ key: 'next-step-detail-1' })
     await w.clock.settle()
     await ui.unmount()
@@ -757,8 +777,8 @@ describe('suggestion shape', () => {
     await completeTurn($, w)
     const ui = await pane($)
 
-    expect(await goalLine(ui)).toBe('🎯 Ship the settings fix [v2]')
-    expect(await labels(ui)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
+    expect(await goalLine(ui)).toBe('Mục tiêu: Ship the settings fix [v2]')
+    expect(await labels(ui)).toEqual(['✓ Run the tests', '⌕ Review it', '→ Settings page'])
   })
 
   test('falls back to a bare JSON array when the reply has no tags, and then shows no goal', async ($, on) => {
@@ -798,7 +818,7 @@ describe('suggestion shape', () => {
     )
     await completeTurn($, w)
 
-    expect(await paneLabels($)).toEqual(['⚖ Pick the option', '🔍 Find the cause', '→ Next part'])
+    expect(await paneLabels($)).toEqual(['⇄ Pick the option', '⌕ Find the cause', '→ Next part'])
   })
 })
 
@@ -863,7 +883,7 @@ describe('anchoring', () => {
     await completeTurn($, w, LONG_ANSWER, 'turn-3')
 
     expect(w.forkPrompts[2]).toContain('- "Settings page": passed over ×2')
-    expect(await paneLabels($)).toEqual(['⚖ Fourth one'])
+    expect(await paneLabels($)).toEqual(['⇄ Fourth one'])
   })
 
   test('a turn started without text records nothing', async ($, on) => {
@@ -883,7 +903,7 @@ describe('one model call per turn', () => {
 
     expect(w.forkPrompts).toHaveLength(1)
     expect(w.completeCalls).toEqual([])
-    expect(await paneLabels($)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
+    expect(await paneLabels($)).toEqual(['✓ Run the tests', '⌕ Review it', '→ Settings page'])
     expect(w.logged.some(line => line.includes('critic'))).toBe(false)
   })
 
@@ -934,7 +954,7 @@ describe('one model call per turn', () => {
     expect(call?.prompt).toContain('END\n</conversation>\n\nDo not continue the task.')
     expect(call?.prompt).not.toContain('tool output that must not appear')
     expect(call?.prompt).toContain("Anchor on the user's latest request")
-    expect(await paneLabels($)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
+    expect(await paneLabels($)).toEqual(['✓ Run the tests', '⌕ Review it', '→ Settings page'])
     expect(w.logged).toContain('claude-haiku-5-5 answered with 0 output tokens')
   })
 
@@ -946,7 +966,7 @@ describe('one model call per turn', () => {
     expect(w.completeCalls).toHaveLength(1)
     expect(w.forkPrompts).toHaveLength(1)
     expect(w.logged.some(line => line.startsWith('not-allowed refused, using the session model'))).toBe(true)
-    expect(await paneLabels($)).toEqual(['✓ Run the tests', '🔍 Review it', '→ Settings page'])
+    expect(await paneLabels($)).toEqual(['✓ Run the tests', '⌕ Review it', '→ Settings page'])
   })
 
   test('a model that gives no reply shows nothing and does not fork', { options: { nextStepsModel: 'claude-haiku-5-5' } }, async ($, on) => {
@@ -1003,7 +1023,7 @@ describe('steps only the user can take outside the chat', () => {
     await completeTurn($, w)
 
     const ui = await pane($)
-    expect(await labels(ui)).toEqual(['✓ Kiểm tra bản đang chạy', '🔍 Check the loaded version'])
+    expect(await labels(ui)).toEqual(['✓ Kiểm tra bản đang chạy', '⌕ Check the loaded version'])
     expect(await whys(ui)).toEqual(['Khởi động lại phiên với local.20 trước khi gửi', 'Why: Check the loaded version'])
     expect(w.suggested).toEqual([CHECKED_FIRST])
     await ui.press({ key: 'next-step-1' })
@@ -1102,7 +1122,7 @@ describe('text the model or a plugin wrote', () => {
     )
     await completeTurn($, w)
 
-    expect(await paneLabels($)).toEqual(['✓ chạy test cài đặt', '🔍 tìm nguyên nhân lỗi', '→ sửa trang hồ sơ'])
+    expect(await paneLabels($)).toEqual(['✓ chạy test cài đặt', '⌕ tìm nguyên nhân lỗi', '→ sửa trang hồ sơ'])
   })
 
   test('a skill description and a plan step cannot close the tags that hold them in the fork prompt', async ($, on) => {
